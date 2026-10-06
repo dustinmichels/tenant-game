@@ -1,42 +1,52 @@
 # tenant-game
 
-This template should help get you started developing with Vue 3 in Vite.
+This is a visual aid for a tenant union organizing game. It is designed for the facilitator to use during workshops and meetings, with minimal, streamlined controls suitable for projector or screen presentation.
 
-## Recommended IDE Setup
+It lives entirely in the browser and browser storage (`localStorage`). No backend, no database.
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+## Visual Aesthetic & Technology
 
-## Recommended Browser Setup
+- **Framework**: Vue 3 + TypeScript + Vite + Pinia
+- **Styling & Visual Engine**: [Rough.js](https://roughjs.com/) for hand-drawn, tactile zine/organizing aesthetics (sketched building facades, windows, streetscapes, and cartoon silhouettes)
+- **Zero-Backend Persistence**: State automatically persists across page refreshes via `localStorage`
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
+## Game Flow
 
-## Type Support for `.vue` Imports in TS
+### 1. Setup
 
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
+When starting or hitting **New Game**, the facilitator is presented with two setup questions:
 
-## Customize configuration
+1. _"How many buildings are there?"_ `<Number box>`
+2. _"Typically, how many people per building?"_ `<Number box>`
 
-See [Vite Configuration Reference](https://vite.dev/config/).
+### 2. Neighborhood Visualization
 
-## Project Setup
+When the facilitator submits:
 
-```sh
+- The game renders $X$ buildings evenly spaced along a hand-drawn neighborhood street with sidewalk curb, pavement joints, and asphalt stripes.
+- Each building features architectural details: rooftop parapets, water towers, entrance stoops, and apartment windows.
+- Inside each window, residents are drawn as hand-drawn grey cartoon silhouettes (various stances, waving neighbors, organizers with clipboards/flyers, beanies, and hair buns).
+
+### 3. Facilitator HUD
+
+- Sticky top bar with key metrics: building count, people per building, and total neighborhood tenants.
+- Streamlined actions:
+  - **Fullscreen**: Expands view for workshop projectors or shared screens.
+  - **Edit**: Adjust counts without wiping the neighborhood.
+  - **New Game**: Reset state and return to setup.
+
+## Development
+
+```bash
+# Install dependencies
 bun install
-```
 
-### Compile and Hot-Reload for Development
-
-```sh
+# Run dev server
 bun run dev
-```
 
-### Type-Check, Compile and Minify for Production
-
-```sh
+# Typecheck and production build
 bun run build
+
+# Preview build
+bun run preview
 ```

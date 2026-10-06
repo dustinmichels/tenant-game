@@ -1,47 +1,72 @@
 <script setup lang="ts">
-import HelloWorld from './components/HelloWorld.vue'
-import TheWelcome from './components/TheWelcome.vue'
+import { ref } from 'vue'
+import { useGameStorage } from './composables/useGameStorage'
+import SetupForm from './components/SetupForm.vue'
+import FacilitatorControls from './components/FacilitatorControls.vue'
+import BuildingGrid from './components/BuildingGrid.vue'
+
+const {
+  state,
+  isConfigured,
+  buildings,
+  totalBuildings,
+  totalTenants,
+  setupGame,
+  resetGame,
+} = useGameStorage()
+
+const isEditing = ref(false)
+
+function handleSubmitSetup(payload: { buildingCount: number; peoplePerBuilding: number }) {
+  setupGame(payload.buildingCount, payload.peoplePerBuilding)
+  isEditing.value = false
+}
+
+function handleReset() {
+  if (window.confirm('Start a new game and return to setup?')) {
+    resetGame()
+    isEditing.value = false
+  }
+}
+
+function handleEdit() {
+  isEditing.value = true
+}
 </script>
 
 <template>
-  <header>
-    <img alt="Vue logo" class="logo" src="./assets/logo.svg" width="125" height="125" />
+  <div class="app-layout">
+    <!-- Facilitator top controls (visible when game is configured) -->
+    <FacilitatorControls
+      v-if="isConfigured && !isEditing"
+      :building-count="totalBuildings"
+      :people-per-building="state.peoplePerBuilding"
+      :total-tenants="totalTenants"
+      @edit="handleEdit"
+      @reset="handleReset"
+    />
 
-    <div class="wrapper">
-      <HelloWorld msg="You did it!" />
-    </div>
-  </header>
+    <!-- Setup Screen: displayed if not configured, or if facilitator clicked Edit -->
+    <SetupForm
+      v-if="!isConfigured || isEditing"
+      :initial-buildings="state.buildingCount"
+      :initial-people="state.peoplePerBuilding"
+      @submit="handleSubmitSetup"
+    />
 
-  <main>
-    <TheWelcome />
-  </main>
+    <!-- Main visual aid: Buildings spaced out nicely with grey cartoon tenant silhouettes -->
+    <BuildingGrid
+      v-else
+      :buildings="buildings"
+    />
+  </div>
 </template>
 
 <style scoped>
-header {
-  line-height: 1.5;
-}
-
-.logo {
-  display: block;
-  margin: 0 auto 2rem;
-}
-
-@media (min-width: 1024px) {
-  header {
-    display: flex;
-    place-items: center;
-    padding-right: calc(var(--section-gap) / 2);
-  }
-
-  .logo {
-    margin: 0 2rem 0 0;
-  }
-
-  header .wrapper {
-    display: flex;
-    place-items: flex-start;
-    flex-wrap: wrap;
-  }
+.app-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-background);
 }
 </style>
