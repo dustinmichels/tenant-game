@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
-import type { Building, RoundTally, CoalitionGroup, GameEvent } from "../types/game";
+import type {
+  Building,
+  RoundTally,
+  CoalitionGroup,
+  GameEvent,
+  EventTextSegment,
+} from "../types/game";
+import { parseEventSegments } from "../utils/eventLog";
 import {
   getBuildingUnionCount,
   getTotalUnionCount,
@@ -9,6 +16,9 @@ import {
   isEarnEvent,
 } from "../types/game";
 import RoughBox from "./RoughBox.vue";
+import RoughButton from "./RoughButton.vue";
+import LandlordFundsModal from "./LandlordFundsModal.vue";
+import { Banknote, X } from "lucide-vue-next";
 import {
   formatCurrency,
   formatCompactCurrency,
@@ -25,6 +35,7 @@ const props = withDefaults(
     coalitionCount?: number;
     coalitions?: CoalitionGroup[];
     events?: GameEvent[];
+    buildingColorMap?: Record<string, string>;
   }>(),
   {
     landlordMoney: undefined,
@@ -32,6 +43,7 @@ const props = withDefaults(
     coalitionCount: 0,
     coalitions: () => [],
     events: () => [],
+    buildingColorMap: () => ({}),
   },
 );
 
@@ -39,7 +51,18 @@ const emit = defineEmits<{
   (e: "add-event", text: string): void;
   (e: "remove-event", id: string): void;
   (e: "spend-landlord-money", amount?: number): void;
+  (e: "earn-landlord-money", amount?: number): void;
 }>();
+
+const isLandlordModalOpen = shallowRef(false);
+
+function handleSpendLandlordMoney(amount: number) {
+  emit("spend-landlord-money", amount);
+}
+
+function handleEarnLandlordMoney(amount: number) {
+  emit("earn-landlord-money", amount);
+}
 
 const newEventText = shallowRef("");
 
@@ -75,6 +98,37 @@ function getTallyForRound(r: number): RoundTally {
       buildingsOrganized: 0,
     }
   );
+}
+function getOrganizedForRound(r: number): number {
+  if (r === props.currentRound) {
+    return unionTenantsCount.value;
+  }
+  return getTallyForRound(r).totalOrganized;
+}
+
+function getUnionChangeForRound(r: number): number {
+  const currentOrganized = getOrganizedForRound(r);
+  const prevOrganized = r > 1 ? getOrganizedForRound(r - 1) : 0;
+  return currentOrganized - prevOrganized;
+}
+
+function getEvictionChangeForRound(r: number): number {
+  if (r === props.currentRound) {
+    return props.buildings.reduce(
+      (sum, b) =>
+        sum +
+        b.tenants.filter(
+          (t) => t.isEvicted && (t.evictedRound ?? props.currentRound) === props.currentRound,
+        ).length,
+      0,
+    );
+  }
+  return getTallyForRound(r).evictions;
+}
+
+function formatChange(val: number): string {
+  if (val > 0) return `+${val}`;
+  return `${val}`;
 }
 
 const currentLandlordMoney = computed(() => {
@@ -131,12 +185,219 @@ const coalitionPercent = computed(() => {
 const totalEvictionsCount = computed(() =>
   props.buildings.reduce((sum, b) => sum + b.tenants.filter((t) => t.isEvicted).length, 0),
 );
+const effectiveBuildingColorMap = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {};
+  for (const b of props.buildings) {
+    map[b.id] = props.buildingColorMap?.[b.id] || b.color;
+  }
+  if (!props.buildingColorMap || Object.keys(props.buildingColorMap).length === 0) {
+    for (const g of props.coalitions) {
+      for (const bId of g.buildingIds) {
+        map[bId] = g.dominantColor;
+      }
+    }
+  }
+  return map;
+});
+
+const eventSegmentsMap = computed(() => {
+  const map = new Map<string, EventTextSegment[]>();
+  const colorMap = effectiveBuildingColorMap.value;
+  for (const event of props.events) {
+    map.set(event.id, parseEventSegments(event.text, props.buildings, colorMap, event.buildingId));
+  }
+  return map;
+});
 </script>
 
 <template>
   <div class="tally-container">
-    <div class="tally-header-card">
-      <!-- Summary Metrics -->
+    <div class="tally-body">
+      <!-- Landlord Actions: Earns/Spends & Spends 50k -->
+      <div class="landlord-actions-row">
+        <RoughButton
+          variant="warning"
+          :seed="907"
+          title="Manage Landlord Funds (Spend / Earn)"
+          class="landlord-action-btn"
+          @click="isLandlordModalOpen = true"
+        >
+          <span class="landlord-btn-content">
+            <Banknote :size="15" :stroke-width="1.5" class="landlord-btn-icon" aria-hidden="true" />
+            <span class="landlord-btn-text">Landlord earns/spends</span>
+          </span>
+        </RoughButton>
+
+        <RoughButton
+          variant="danger"
+          :seed="925"
+          title="Quick action: Landlord spends $50,000"
+          class="landlord-action-btn"
+          @click="handleQuickSpend"
+        >
+          <span class="landlord-btn-content">
+            <Banknote :size="15" :stroke-width="1.5" class="landlord-btn-icon" aria-hidden="true" />
+            <span class="landlord-btn-text">Landlord spends 50k</span>
+          </span>
+        </RoughButton>
+      </div>
+
+      <!-- Events Section (Space above the table) -->
+      <div class="events-card">
+        <div class="events-header">
+          <div class="events-title-wrap">
+            <span class="events-title">Events</span>
+            <span v-if="events && events.length > 0" class="events-count">
+              {{ events.length }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Bullet list of events: general events are grey/blue, spending money is red, earning money is green -->
+        <ul v-if="events && events.length > 0" class="events-list">
+          <li
+            v-for="event in events"
+            :key="event.id"
+            class="event-bullet-item"
+            :class="{ 'is-spend': isSpendEvent(event), 'is-earn': isEarnEvent(event) }"
+          >
+            <span class="event-text">
+              <template
+                v-for="(seg, sIdx) in eventSegmentsMap.get(event.id) ?? [
+                  { text: event.text, isBuilding: false },
+                ]"
+                :key="sIdx"
+              >
+                <span
+                  v-if="seg.isBuilding"
+                  class="event-building-name"
+                  :style="{ color: seg.color }"
+                  >{{ seg.text }}</span
+                >
+                <template v-else>{{ seg.text }}</template>
+              </template>
+            </span>
+            <button
+              type="button"
+              class="event-remove-btn"
+              title="Remove event"
+              aria-label="Remove event"
+              @click="emit('remove-event', event.id)"
+            >
+              <X :size="11" :stroke-width="1.5" />
+            </button>
+          </li>
+        </ul>
+        <p v-else class="events-empty-hint">No events recorded yet.</p>
+
+        <!-- Input to record a new event -->
+        <form class="event-input-form" @submit.prevent="handleAddEvent">
+          <input
+            v-model="newEventText"
+            type="text"
+            class="event-input"
+            placeholder="Record event... (e.g. landlord spends 50k)"
+            aria-label="Record event"
+          />
+          <button
+            type="submit"
+            class="event-add-btn"
+            :disabled="!newEventText.trim()"
+            title="Record event"
+          >
+            Add
+          </button>
+        </form>
+      </div>
+
+      <!-- Tally Table (Read Only) -->
+      <div class="tally-table-wrapper">
+        <table class="tally-table">
+          <thead>
+            <tr>
+              <th class="col-round" title="Game Round">Round</th>
+              <th class="col-landlord" title="Remaining landlord funds (reduced sum)">
+                Landlord $
+              </th>
+              <th class="col-organized" title="Change in union residents this round">In Union</th>
+              <th class="col-evictions" title="Evictions this round">Evictions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="r in roundNumbers"
+              :key="r"
+              class="tally-row"
+              :class="{
+                'is-current-round': r === currentRound,
+              }"
+            >
+              <!-- Round label -->
+              <td class="cell-round">
+                <span class="round-name">R{{ r }}</span>
+              </td>
+
+              <!-- Landlord Funds (Reduced Sum) -->
+              <td class="cell-number cell-landlord">
+                <div class="landlord-display-wrap">
+                  <span
+                    class="val-display val-landlord"
+                    :title="`Remaining landlord funds in Round ${r}: ${formatCurrency(getLandlordFundsForRound(r))}`"
+                  >
+                    {{ formatCompactCurrency(getLandlordFundsForRound(r)) }}
+                  </span>
+                  <span
+                    v-if="getLandlordSpendingForRound(r) > 0"
+                    class="spent-tag"
+                    :title="`Spent in Round ${r}: ${formatCurrency(getLandlordSpendingForRound(r))}`"
+                  >
+                    (-{{ formatCompactCurrency(getLandlordSpendingForRound(r)) }})
+                  </span>
+                </div>
+              </td>
+
+              <!-- Union Change (Read Only) -->
+              <td class="cell-number cell-union">
+                <span
+                  class="val-display val-union"
+                  :class="{
+                    'is-zero': getUnionChangeForRound(r) === 0,
+                    'is-negative': getUnionChangeForRound(r) < 0,
+                  }"
+                  :title="`Change in union members in Round ${r}: ${formatChange(getUnionChangeForRound(r))}${
+                    getOrganizedForRound(r) !== undefined
+                      ? ` (${getOrganizedForRound(r)} total)`
+                      : ''
+                  }`"
+                >
+                  {{ formatChange(getUnionChangeForRound(r)) }}
+                </span>
+              </td>
+
+              <!-- Evictions that Round (Read Only) -->
+              <td class="cell-number cell-evictions">
+                <span
+                  class="val-display val-evictions"
+                  :class="{
+                    'is-zero': getEvictionChangeForRound(r) === 0,
+                  }"
+                  :title="`Evictions in Round ${r}: ${formatChange(getEvictionChangeForRound(r))}${
+                    getTallyForRound(r).totalEvictions !== undefined
+                      ? ` (${getTallyForRound(r).totalEvictions} cumulative total)`
+                      : ''
+                  }`"
+                >
+                  {{ formatChange(getEvictionChangeForRound(r)) }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Running Counts / Summary Metrics (Pinned to bottom of sidebar) -->
+    <div class="tally-footer-card">
       <div class="metrics-section">
         <RoughBox
           :stroke="'#a89c8a'"
@@ -215,150 +476,14 @@ const totalEvictionsCount = computed(() =>
       </div>
     </div>
 
-    <!-- Events Section (Space above the table) -->
-    <div class="events-card">
-      <div class="events-header">
-        <div class="events-title-wrap">
-          <span class="events-title">Events</span>
-          <span v-if="events && events.length > 0" class="events-count">
-            {{ events.length }}
-          </span>
-        </div>
-        <div class="events-quick-actions">
-          <button
-            type="button"
-            class="quick-spend-chip"
-            title="Quick action: Landlord spends 50k"
-            @click="handleQuickSpend"
-          >
-            <span class="chip-icon" aria-hidden="true">💸</span>
-            <span>+ landlord spends 50k</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Bullet list of events: general events are grey/blue, spending money is red, earning money is green -->
-      <ul v-if="events && events.length > 0" class="events-list">
-        <li
-          v-for="event in events"
-          :key="event.id"
-          class="event-bullet-item"
-          :class="{ 'is-spend': isSpendEvent(event), 'is-earn': isEarnEvent(event) }"
-        >
-          <span class="event-text">{{ event.text }}</span>
-          <button
-            type="button"
-            class="event-remove-btn"
-            title="Remove event"
-            aria-label="Remove event"
-            @click="emit('remove-event', event.id)"
-          >
-            ×
-          </button>
-        </li>
-      </ul>
-      <p v-else class="events-empty-hint">No events recorded yet.</p>
-
-      <!-- Input to record a new event -->
-      <form class="event-input-form" @submit.prevent="handleAddEvent">
-        <input
-          v-model="newEventText"
-          type="text"
-          class="event-input"
-          placeholder="Record event... (e.g. landlord spends 50k)"
-          aria-label="Record event"
-        />
-        <button
-          type="submit"
-          class="event-add-btn"
-          :disabled="!newEventText.trim()"
-          title="Record event"
-        >
-          Add
-        </button>
-      </form>
-    </div>
-
-    <!-- Tally Table (Read Only) -->
-    <div class="tally-table-wrapper">
-      <table class="tally-table">
-        <thead>
-          <tr>
-            <th class="col-round" title="Game Round">Round</th>
-            <th class="col-landlord" title="Remaining landlord funds (reduced sum)">Landlord $</th>
-            <th class="col-organized" title="Total residents in union">In Union</th>
-            <th class="col-evictions" title="Evictions this round">Evictions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="r in roundNumbers"
-            :key="r"
-            class="tally-row"
-            :class="{
-              'is-current-round': r === currentRound,
-            }"
-          >
-            <!-- Round label -->
-            <td class="cell-round">
-              <span class="round-name">R{{ r }}</span>
-            </td>
-
-            <!-- Landlord Funds (Reduced Sum) -->
-            <td class="cell-number cell-landlord">
-              <div class="landlord-display-wrap">
-                <span
-                  class="val-display val-landlord"
-                  :title="`Remaining landlord funds in Round ${r}: ${formatCurrency(getLandlordFundsForRound(r))}`"
-                >
-                  {{ formatCompactCurrency(getLandlordFundsForRound(r)) }}
-                </span>
-                <span
-                  v-if="getLandlordSpendingForRound(r) > 0"
-                  class="spent-tag"
-                  :title="`Spent in Round ${r}: ${formatCurrency(getLandlordSpendingForRound(r))}`"
-                >
-                  (-{{ formatCompactCurrency(getLandlordSpendingForRound(r)) }})
-                </span>
-              </div>
-            </td>
-
-            <!-- Total in Union (Read Only) -->
-            <td class="cell-number cell-union">
-              <span class="val-display val-union" title="Residents in tenant union">
-                {{ getTallyForRound(r).totalOrganized }}
-              </span>
-            </td>
-
-            <!-- Evictions that Round (Read Only) -->
-            <td class="cell-number cell-evictions">
-              <div class="eviction-display-wrap">
-                <span
-                  class="val-display val-evictions"
-                  :title="`${getTallyForRound(r).evictions} eviction(s) this round${
-                    getTallyForRound(r).totalEvictions !== undefined
-                      ? ` (${getTallyForRound(r).totalEvictions} cumulative total)`
-                      : ''
-                  }`"
-                >
-                  {{ getTallyForRound(r).evictions }}
-                </span>
-                <span
-                  v-if="
-                    getTallyForRound(r).totalEvictions !== undefined &&
-                    getTallyForRound(r).totalEvictions !== getTallyForRound(r).evictions
-                  "
-                  class="cumul-tag"
-                  :title="`Cumulative evictions through Round ${r}: ${getTallyForRound(r).totalEvictions}`"
-                >
-                  (tot: {{ getTallyForRound(r).totalEvictions }})
-                </span>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- Landlord Spend/Earn Modal -->
+    <LandlordFundsModal
+      :show="isLandlordModalOpen"
+      :landlord-money="currentLandlordMoney"
+      @close="isLandlordModalOpen = false"
+      @spend="handleSpendLandlordMoney"
+      @earn="handleEarnLandlordMoney"
+    />
   </div>
 </template>
 
@@ -367,20 +492,38 @@ const totalEvictionsCount = computed(() =>
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 12px;
-  gap: 12px;
+  width: 100%;
   font-family: inherit;
   color: #29241e;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tally-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 12px;
+  gap: 12px;
   overflow-y: auto;
   box-sizing: border-box;
 }
 
-.tally-header-card {
+.tally-body > * {
+  flex-shrink: 0;
+}
+
+.tally-footer-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-bottom: 10px;
-  border-bottom: 2px dashed #ded4c3;
+  flex-shrink: 0;
+  padding: 10px 12px 12px 12px;
+  border-top: 2px dashed #ded4c3;
+  background-color: #faf6ee;
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.03);
+  z-index: 10;
+  box-sizing: border-box;
 }
 
 .metrics-section {
@@ -388,7 +531,6 @@ const totalEvictionsCount = computed(() =>
   align-items: stretch;
   gap: 6px;
   flex-wrap: wrap;
-  margin-top: 4px;
 }
 
 .metric-box {
@@ -567,18 +709,13 @@ const totalEvictionsCount = computed(() =>
 .val-evictions {
   color: #dc2626;
 }
-
-.eviction-display-wrap {
-  display: inline-flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 4px;
+.val-union.is-negative {
+  color: #dc2626;
 }
-.cumul-tag {
-  font-size: 0.72rem;
-  color: #991b1b;
+
+.val-display.is-zero {
+  color: #78716c;
   font-weight: 600;
-  opacity: 0.88;
 }
 
 .col-landlord {
@@ -652,34 +789,42 @@ const totalEvictionsCount = computed(() =>
   line-height: 1.2;
 }
 
-.events-quick-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/* Landlord Action Buttons Row */
+.landlord-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
-.quick-spend-chip {
+.landlord-action-btn {
+  width: 100%;
+}
+
+.landlord-action-btn :deep(.rough-btn-label) {
+  padding: 6px 8px;
+  width: 100%;
+  justify-content: center;
+}
+
+.landlord-btn-content {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.72rem;
+  justify-content: center;
+  gap: 5px;
   font-weight: 700;
-  padding: 2px 7px;
-  background-color: #fef2f2;
-  color: #b91c1c;
-  border: 1px solid #fecaca;
-  border-radius: 12px;
-  cursor: pointer;
-  transition:
-    background-color 0.15s,
-    border-color 0.15s,
-    transform 0.1s;
+  font-size: 0.76rem;
+  line-height: 1.25;
+  text-align: center;
 }
 
-.quick-spend-chip:hover {
-  background-color: #fee2e2;
-  border-color: #f87171;
-  transform: translateY(-0.5px);
+.landlord-btn-icon {
+  font-size: 0.88rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.landlord-btn-text {
+  font-weight: 700;
 }
 
 /* Event bullet list items: general events are grey/blue, spending money is red */
@@ -710,6 +855,9 @@ const totalEvictionsCount = computed(() =>
 
 .event-bullet-item .event-text {
   color: #475569;
+}
+.event-building-name {
+  font-weight: 700;
 }
 
 /* Spending money events are styled in red */

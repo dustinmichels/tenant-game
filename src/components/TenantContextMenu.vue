@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { computed, ref, watch, nextTick, useTemplateRef } from "vue";
+import { onClickOutside, onKeyStroke, useEventListener } from "@vueuse/core";
 import type { Tenant, Building } from "../types/game";
+import { Users, Star, Ban, Undo2, Check, X } from "lucide-vue-next";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
 
@@ -18,8 +20,19 @@ const emit = defineEmits<{
   (e: "leave", tenant: Tenant, building: Building): void;
   (e: "evict", tenant: Tenant, building: Building, evicted: boolean): void;
 }>();
+const menuRef = useTemplateRef<HTMLElement>("menuRef");
 const adjustedX = ref(0);
 const adjustedY = ref(0);
+
+onClickOutside(menuRef, () => {
+  if (props.show) emit("close");
+});
+
+onKeyStroke("Escape", () => {
+  if (props.show) emit("close");
+});
+
+useEventListener(window, "resize", updatePosition);
 
 function updatePosition() {
   const menuWidth = 250;
@@ -51,21 +64,6 @@ watch(
   { immediate: true },
 );
 
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape" && props.show) {
-    emit("close");
-  }
-}
-
-onMounted(() => {
-  window.addEventListener("keydown", handleKeydown);
-  window.addEventListener("resize", updatePosition);
-});
-
-onUnmounted(() => {
-  window.removeEventListener("keydown", handleKeydown);
-  window.removeEventListener("resize", updatePosition);
-});
 const isInstigator = computed(() => Boolean(props.tenant?.isInstigator));
 const inUnion = computed(() => Boolean(props.tenant?.inUnion || props.tenant?.isInstigator));
 const isEvicted = computed(() => Boolean(props.tenant?.isEvicted));
@@ -133,26 +131,43 @@ function handleToggleEviction(evicted: boolean) {
                 aria-label="Close menu"
                 @click="emit('close')"
               >
-                ✕
+                <X :size="14" :stroke-width="1.5" />
               </button>
             </div>
 
             <!-- Status Indicator -->
             <div v-if="isEvicted || isInstigator || inUnion" class="status-indicator">
-              <span v-if="isEvicted" class="status-badge evicted"> 🚫 Evicted </span>
+              <span v-if="isEvicted" class="status-badge evicted">
+                <Ban
+                  :size="12"
+                  :stroke-width="1.5"
+                  style="margin-right: 3px; vertical-align: -1px"
+                />
+                Evicted
+              </span>
               <span
                 v-if="isInstigator"
                 class="status-badge instigator"
                 :style="{ borderColor: building.color, color: building.color }"
               >
-                ★ Building Instigator
+                <Star
+                  :size="12"
+                  :stroke-width="1.5"
+                  style="margin-right: 3px; vertical-align: -1px"
+                />
+                Building Instigator
               </span>
               <span
                 v-else-if="inUnion"
                 class="status-badge in-union"
                 :style="{ borderColor: building.color, color: building.color }"
               >
-                ✊ Union Member
+                <Users
+                  :size="12"
+                  :stroke-width="1.5"
+                  style="margin-right: 3px; vertical-align: -1px"
+                />
+                Union Member
               </span>
             </div>
             <!-- Actions List -->
@@ -164,7 +179,10 @@ function handleToggleEviction(evicted: boolean) {
                 class="menu-action-btn"
                 @click="handleJoin"
               >
-                <span>✊ Join union</span>
+                <span style="display: inline-flex; align-items: center"
+                  ><Users :size="13" :stroke-width="1.5" style="margin-right: 5px" /> Join
+                  union</span
+                >
               </RoughButton>
 
               <RoughButton
@@ -174,7 +192,10 @@ function handleToggleEviction(evicted: boolean) {
                 class="menu-action-btn"
                 @click="handleLeave"
               >
-                <span>↩ Leave union</span>
+                <span style="display: inline-flex; align-items: center"
+                  ><Undo2 :size="13" :stroke-width="1.5" style="margin-right: 5px" /> Leave
+                  union</span
+                >
               </RoughButton>
 
               <div v-else class="instigator-notice">
@@ -189,7 +210,10 @@ function handleToggleEviction(evicted: boolean) {
                 class="menu-action-btn"
                 @click="handleToggleEviction(true)"
               >
-                <span>🚫 Evict person</span>
+                <span style="display: inline-flex; align-items: center"
+                  ><Ban :size="13" :stroke-width="1.5" style="margin-right: 5px" /> Evict
+                  person</span
+                >
               </RoughButton>
 
               <RoughButton
@@ -199,7 +223,10 @@ function handleToggleEviction(evicted: boolean) {
                 class="menu-action-btn"
                 @click="handleToggleEviction(false)"
               >
-                <span>✓ Cancel eviction</span>
+                <span style="display: inline-flex; align-items: center"
+                  ><Check :size="13" :stroke-width="1.5" style="margin-right: 5px" /> Cancel
+                  eviction</span
+                >
               </RoughButton>
             </div>
           </div>

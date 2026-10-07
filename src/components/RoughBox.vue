@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef } from "vue";
+import { computed, shallowRef, useTemplateRef } from "vue";
+import { useResizeObserver } from "@vueuse/core";
 import { roughGen } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
 
@@ -36,29 +37,18 @@ const containerRef = useTemplateRef<HTMLElement>("containerRef");
 const width = shallowRef(0);
 const height = shallowRef(0);
 
-let observer: ResizeObserver | null = null;
-
-onMounted(() => {
-  if (!containerRef.value) return;
-  observer = new ResizeObserver((entries) => {
-    const entry = entries[0];
-    if (!entry) return;
-    const rect = entry.contentRect;
-    const w = Math.round(rect.width);
-    const h = Math.round(rect.height);
-    requestAnimationFrame(() => {
-      if (w !== width.value || h !== height.value) {
-        width.value = w;
-        height.value = h;
-      }
-    });
+useResizeObserver(containerRef, (entries) => {
+  const entry = entries[0];
+  if (!entry) return;
+  const rect = entry.contentRect;
+  const w = Math.round(rect.width);
+  const h = Math.round(rect.height);
+  requestAnimationFrame(() => {
+    if (w !== width.value || h !== height.value) {
+      width.value = w;
+      height.value = h;
+    }
   });
-  observer.observe(containerRef.value);
-});
-
-onUnmounted(() => {
-  observer?.disconnect();
-  observer = null;
 });
 
 const paths = computed<PathInfo[]>(() => {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch, useTemplateRef } from "vue";
+import { useResizeObserver, useEventListener, onKeyStroke } from "@vueuse/core";
 import type {
   Building,
   Tenant,
@@ -16,7 +17,10 @@ import {
   swapBuildingPositions,
   calculateOptimalPersonSize,
   BASELINE_PERSON_WIDTH,
+  PERSON_ASPECT_RATIO,
   isBuildingOrganized,
+  getBuildingUnionCount,
+  spaceOutNodes,
 } from "../types/game";
 import { roughGen, createSeed } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
@@ -32,8 +36,9 @@ import LandlordBuilding from "./LandlordBuilding.vue";
 import TenantContextMenu from "./TenantContextMenu.vue";
 import TenantAdjustModal from "./TenantAdjustModal.vue";
 import BreakCoalitionModal from "./BreakCoalitionModal.vue";
+import { Cable, Scissors, MoveHorizontal, Shuffle, X } from "lucide-vue-next";
 import RoughButton from "./RoughButton.vue";
-
+import RoughBox from "./RoughBox.vue";
 const props = withDefaults(
   defineProps<{
     buildings: Building[];
@@ -43,9 +48,12 @@ const props = withDefaults(
     buildingColorMap?: Record<string, string>;
     canUndoCoalition?: boolean;
     landlordMoney?: number;
+    landlordPosition?: { x: number; y: number };
     personWidth?: number;
     personHeight?: number;
     personScale?: number;
+    canMove?: boolean;
+    showLandlord?: boolean;
   }>(),
   {
     defaultPeople: 8,
@@ -53,9 +61,12 @@ const props = withDefaults(
     coalitions: () => [],
     buildingColorMap: () => ({}),
     canUndoCoalition: false,
+    landlordPosition: () => ({ x: 82, y: 3 }),
     personWidth: undefined,
     personHeight: undefined,
     personScale: undefined,
+    canMove: undefined,
+    showLandlord: undefined,
   },
 );
 
@@ -78,7 +89,7 @@ const effectivePersonWidth = computed(() => {
 });
 
 const effectivePersonHeight = computed(() => {
-  return Math.round(effectivePersonWidth.value / 0.68);
+  return Math.round(effectivePersonWidth.value / PERSON_ASPECT_RATIO);
 });
 
 const effectivePersonScale = computed(() => {
@@ -88,7 +99,13 @@ const effectivePersonScale = computed(() => {
 const emit = defineEmits<{
   (e: "update-building-position", buildingId: string, x: number, y: number): void;
   (e: "update-building-positions", updates: Array<{ id: string; x: number; y: number }>): void;
-  (e: "adjust-tenants", buildingId: string, count: number): void;
+  (e: "update-landlord-position", x: number, y: number): void;
+  (e: "adjust-tenants", buildingId: string, count: number, label?: string, color?: string): void;
+  (
+    e: "update-building",
+    buildingId: string,
+    updates: { count: number; label: string; color: string },
+  ): void;
   (e: "toggle-union", buildingId: string, tenantId: string, join?: boolean): void;
   (e: "toggle-eviction", buildingId: string, tenantId: string, evicted?: boolean): void;
   (e: "connect-coalition", sourceId: string, targetId: string): void;
@@ -96,7 +113,44 @@ const emit = defineEmits<{
   (e: "disconnect-building", buildingId: string): void;
   (e: "undo-coalition"): void;
   (e: "shuffle-positions"): void;
+  (e: "update:can-move", value: boolean): void;
+  (e: "update:show-landlord", value: boolean): void;
+  (e: "space-out"): void;
 }>();
+const localCanMove = ref(props.canMove ?? true);
+watch(
+  () => props.canMove,
+  (newVal) => {
+    if (newVal !== undefined) {
+      localCanMove.value = newVal;
+    }
+  },
+);
+
+const isCanMoveActive = computed({
+  get: () => (props.canMove !== undefined ? props.canMove : localCanMove.value),
+  set: (val: boolean) => {
+    localCanMove.value = val;
+    emit("update:can-move", val);
+  },
+});
+const localShowLandlord = ref(props.showLandlord ?? true);
+watch(
+  () => props.showLandlord,
+  (newVal) => {
+    if (newVal !== undefined) {
+      localShowLandlord.value = newVal;
+    }
+  },
+);
+
+const isShowLandlordActive = computed({
+  get: () => (props.showLandlord !== undefined ? props.showLandlord : localShowLandlord.value),
+  set: (val: boolean) => {
+    localShowLandlord.value = val;
+    emit("update:show-landlord", val);
+  },
+});
 const canvasRef = useTemplateRef<HTMLElement>("canvasRef");
 
 // Pointer drag state for repositioning buildings in Edit Position mode
@@ -105,6 +159,32 @@ const activeDragBuildingId = ref<string | null>(null);
 const hoveredCollisionBuildingId = ref<string | null>(null);
 const repulsedBuildingIds = ref<Set<string>>(new Set());
 const swappedBuildingIds = ref<Set<string>>(new Set());
+const currentLandlordPos = ref<{ x: number; y: number }>({
+  x: props.landlordPosition?.x ?? 82,
+  y: props.landlordPosition?.y ?? 3,
+});
+
+watch(
+  () => props.landlordPosition,
+  (newPos) => {
+    if (newPos && !isDragging.value) {
+      currentLandlordPos.value = { x: newPos.x, y: newPos.y };
+    }
+  },
+  { deep: true },
+);
+
+function getAllPlaceableBuildings(): Array<{ id: string; x: number; y: number }> {
+  const list: Array<{ id: string; x: number; y: number }> = props.buildings.map((b) => ({
+    id: b.id,
+    x: b.x,
+    y: b.y,
+  }));
+  if (isShowLandlordActive.value) {
+    list.push({ id: "landlord", x: currentLandlordPos.value.x, y: currentLandlordPos.value.y });
+  }
+  return list;
+}
 
 function getBuildingDimensionsMap(): Record<string, BuildingDimensions> {
   const map: Record<string, BuildingDimensions> = {};
@@ -113,17 +193,39 @@ function getBuildingDimensionsMap(): Record<string, BuildingDimensions> {
   const canvasRect = canvasEl.getBoundingClientRect();
   if (canvasRect.width <= 0 || canvasRect.height <= 0) return map;
 
-  for (const building of props.buildings) {
-    const el = buildingCardEls.get(building.id);
+  for (const [id, el] of buildingCardEls.entries()) {
     if (el) {
       const rect = el.getBoundingClientRect();
-      map[building.id] = {
+      map[id] = {
         w: (rect.width / canvasRect.width) * 100,
         h: (rect.height / canvasRect.height) * 100,
       };
     }
   }
   return map;
+}
+
+function handleSpaceOut() {
+  const placeableNodes = getAllPlaceableBuildings();
+  if (placeableNodes.length === 0) return;
+  const dimMap = getBuildingDimensionsMap();
+  const newPositions = spaceOutNodes(placeableNodes, dimMap);
+
+  const landlordUpdate = newPositions.find((p) => p.id === "landlord");
+  if (landlordUpdate && isShowLandlordActive.value) {
+    currentLandlordPos.value = { x: landlordUpdate.x, y: landlordUpdate.y };
+    emit("update-landlord-position", landlordUpdate.x, landlordUpdate.y);
+  }
+
+  const residentialUpdates = newPositions
+    .filter((p) => p.id !== "landlord")
+    .map((p) => ({ id: p.id, x: p.x, y: p.y }));
+
+  if (residentialUpdates.length > 0) {
+    emit("update-building-positions", residentialUpdates);
+    animatePinPositionsDuringTransition(450);
+  }
+  emit("space-out");
 }
 
 function getElementRectsMap(): Record<
@@ -145,7 +247,17 @@ function getElementRectsMap(): Record<
   return map;
 }
 
-function handlePointerDownDrag(e: PointerEvent, building: Building) {
+function handleLandlordPointerDownDrag(e: PointerEvent) {
+  if (!isCanMoveActive.value) return;
+  handlePointerDownDrag(e, {
+    id: "landlord",
+    x: currentLandlordPos.value.x,
+    y: currentLandlordPos.value.y,
+  });
+}
+
+function handlePointerDownDrag(e: PointerEvent, building: { id: string; x: number; y: number }) {
+  if (!isCanMoveActive.value) return;
   if (e.button !== 0) return;
   const canvasEl = canvasRef.value;
   if (!canvasEl) return;
@@ -170,16 +282,22 @@ function handlePointerDownDrag(e: PointerEvent, building: Building) {
     const deltaYPercent = (deltaY / canvasRect.height) * 100;
 
     // Clamp coordinates within the canvas
-    const newX = Math.round(Math.max(1, Math.min(74, startBuildingX + deltaXPercent)) * 10) / 10;
-    const newY = Math.round(Math.max(1, Math.min(70, startBuildingY + deltaYPercent)) * 10) / 10;
-    emit("update-building-position", building.id, newX, newY);
+    const newX = Math.round(Math.max(1, Math.min(84, startBuildingX + deltaXPercent)) * 10) / 10;
+    const newY = Math.round(Math.max(1, Math.min(72, startBuildingY + deltaYPercent)) * 10) / 10;
+
+    if (building.id === "landlord") {
+      currentLandlordPos.value = { x: newX, y: newY };
+    } else {
+      emit("update-building-position", building.id, newX, newY);
+    }
 
     // Detect if hovering over another building to show visual feedback for switching places
     const dimMap = getBuildingDimensionsMap();
+    const candidateBuildings = getAllPlaceableBuildings();
     const swapTarget = findSwapTargetBuilding(
       building.id,
       { x: newX, y: newY },
-      props.buildings,
+      candidateBuildings,
       dimMap,
       {
         pointerClient: { x: moveEvent.clientX, y: moveEvent.clientY },
@@ -208,19 +326,20 @@ function handlePointerDownDrag(e: PointerEvent, building: Building) {
     );
 
     // If dropped directly on top of another building (moved > 6px), switch places!
-    let targetBuilding: Building | null = null;
+    const allBuildings = getAllPlaceableBuildings();
+    let targetBuilding: { id: string; x: number; y: number } | null = null;
     if (totalDragDist > 6) {
       if (targetBuildingId) {
-        targetBuilding = props.buildings.find((b) => b.id === targetBuildingId) ?? null;
+        targetBuilding = allBuildings.find((b) => b.id === targetBuildingId) ?? null;
       }
       if (!targetBuilding) {
         const dimMap = getBuildingDimensionsMap();
-        const placedBuilding = props.buildings.find((b) => b.id === placedId);
+        const placedBuilding = allBuildings.find((b) => b.id === placedId);
         if (placedBuilding) {
           targetBuilding = findSwapTargetBuilding(
             placedId,
             { x: placedBuilding.x, y: placedBuilding.y },
-            props.buildings,
+            allBuildings,
             dimMap,
             {
               pointerClient: { x: upEvent.clientX, y: upEvent.clientY },
@@ -232,14 +351,7 @@ function handlePointerDownDrag(e: PointerEvent, building: Building) {
     }
 
     if (targetBuilding && targetBuilding.id !== placedId) {
-      // Make them switch places
-      const updates = swapBuildingPositions(
-        placedId,
-        { x: startBuildingX, y: startBuildingY },
-        targetBuilding.id,
-        { x: targetBuilding.x, y: targetBuilding.y },
-      );
-
+      // Swapping places between placedId and targetBuilding.id
       swappedBuildingIds.value.add(placedId);
       swappedBuildingIds.value.add(targetBuilding.id);
       setTimeout(() => {
@@ -247,12 +359,66 @@ function handlePointerDownDrag(e: PointerEvent, building: Building) {
         swappedBuildingIds.value.delete(targetBuilding.id);
       }, 600);
 
-      emit("update-building-positions", updates);
+      const targetNewX = startBuildingX;
+      const targetNewY = startBuildingY;
+      const placedNewX = targetBuilding.x;
+      const placedNewY = targetBuilding.y;
+
+      if (placedId === "landlord") {
+        currentLandlordPos.value = { x: placedNewX, y: placedNewY };
+        emit("update-landlord-position", placedNewX, placedNewY);
+        emit("update-building-position", targetBuilding.id, targetNewX, targetNewY);
+      } else if (targetBuilding.id === "landlord") {
+        currentLandlordPos.value = { x: targetNewX, y: targetNewY };
+        emit("update-landlord-position", targetNewX, targetNewY);
+        emit("update-building-position", placedId, placedNewX, placedNewY);
+      } else {
+        const updates = swapBuildingPositions(
+          placedId,
+          { x: startBuildingX, y: startBuildingY },
+          targetBuilding.id,
+          { x: targetBuilding.x, y: targetBuilding.y },
+        );
+        emit("update-building-positions", updates);
+      }
+
       animatePinPositionsDuringTransition(450);
       return;
     }
 
-    // Placed in empty space: clamp and resolve glancing overlaps
+    // Placed in empty space:
+    if (placedId === "landlord") {
+      const clamped = clampBuildingPosition({
+        x: currentLandlordPos.value.x,
+        y: currentLandlordPos.value.y,
+      });
+      currentLandlordPos.value = clamped;
+      emit("update-landlord-position", clamped.x, clamped.y);
+
+      // Repulse any residential buildings that are slightly overlapped by the placed landlord building
+      const dimMap = getBuildingDimensionsMap();
+      const candidateBuildings = getAllPlaceableBuildings();
+      const repulsedUpdates = resolveBuildingCollisions("landlord", candidateBuildings, dimMap);
+      const residentialUpdates = repulsedUpdates.filter((u) => u.id !== "landlord");
+      if (residentialUpdates.length > 0) {
+        for (const u of residentialUpdates) {
+          repulsedBuildingIds.value.add(u.id);
+        }
+        setTimeout(() => {
+          for (const u of residentialUpdates) {
+            repulsedBuildingIds.value.delete(u.id);
+          }
+        }, 500);
+
+        emit("update-building-positions", residentialUpdates);
+        animatePinPositionsDuringTransition(450);
+      } else {
+        nextTick(updatePinPositions);
+      }
+      return;
+    }
+
+    // Residential building placed in empty space
     const placedBuilding = props.buildings.find((b) => b.id === placedId);
     if (placedBuilding) {
       const clamped = clampBuildingPosition({ x: placedBuilding.x, y: placedBuilding.y });
@@ -263,18 +429,31 @@ function handlePointerDownDrag(e: PointerEvent, building: Building) {
 
     // Repulse any buildings that are slightly overlapped by the placed building in open space
     const dimMap = getBuildingDimensionsMap();
-    const repulsedUpdates = resolveBuildingCollisions(placedId, props.buildings, dimMap);
-    if (repulsedUpdates.length > 0) {
-      for (const u of repulsedUpdates) {
+    const candidateBuildings = getAllPlaceableBuildings();
+    const repulsedUpdates = resolveBuildingCollisions(placedId, candidateBuildings, dimMap);
+
+    const landlordRepulse = repulsedUpdates.find((u) => u.id === "landlord");
+    if (landlordRepulse) {
+      currentLandlordPos.value = { x: landlordRepulse.x, y: landlordRepulse.y };
+      emit("update-landlord-position", landlordRepulse.x, landlordRepulse.y);
+      repulsedBuildingIds.value.add("landlord");
+      setTimeout(() => {
+        repulsedBuildingIds.value.delete("landlord");
+      }, 500);
+    }
+
+    const residentialUpdates = repulsedUpdates.filter((u) => u.id !== "landlord");
+    if (residentialUpdates.length > 0) {
+      for (const u of residentialUpdates) {
         repulsedBuildingIds.value.add(u.id);
       }
       setTimeout(() => {
-        for (const u of repulsedUpdates) {
+        for (const u of residentialUpdates) {
           repulsedBuildingIds.value.delete(u.id);
         }
       }, 500);
 
-      emit("update-building-positions", repulsedUpdates);
+      emit("update-building-positions", residentialUpdates);
       animatePinPositionsDuringTransition(450);
     } else {
       nextTick(updatePinPositions);
@@ -356,8 +535,22 @@ function closeAdjustModal() {
   adjustModal.value.building = null;
 }
 
-function handleSaveAdjustTenants(buildingId: string, count: number) {
-  emit("adjust-tenants", buildingId, count);
+function handleSaveAdjustTenants(
+  buildingId: string,
+  settingsOrCount: { count: number; label: string; color: string } | number,
+) {
+  if (typeof settingsOrCount === "object" && settingsOrCount !== null) {
+    emit("update-building", buildingId, settingsOrCount);
+    emit(
+      "adjust-tenants",
+      buildingId,
+      settingsOrCount.count,
+      settingsOrCount.label,
+      settingsOrCount.color,
+    );
+  } else {
+    emit("adjust-tenants", buildingId, settingsOrCount);
+  }
 }
 
 // DOM Element references to buildings for exact thread pin coordinates
@@ -447,27 +640,24 @@ function animatePinPositionsDuringTransition(duration = 450) {
   transitionAnimFrameId = requestAnimationFrame(frame);
 }
 
-let resizeObserver: ResizeObserver | null = null;
+useResizeObserver(canvasRef, () => {
+  requestAnimationFrame(updatePinPositions);
+});
+useEventListener(window, "resize", updatePinPositions);
+onKeyStroke("Escape", () => {
+  if (threadDrag.value.isActive || threadDrag.value.isClickConnecting) {
+    cancelThreadDrag();
+  }
+});
 
 onMounted(() => {
   nextTick(updatePinPositions);
-  if (canvasRef.value) {
-    resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(updatePinPositions);
-    });
-    resizeObserver.observe(canvasRef.value);
-  }
-  window.addEventListener("resize", updatePinPositions);
-  window.addEventListener("keydown", handleGlobalKeydown);
 });
 
 onUnmounted(() => {
   if (transitionAnimFrameId !== null) {
     cancelAnimationFrame(transitionAnimFrameId);
   }
-  resizeObserver?.disconnect();
-  window.removeEventListener("resize", updatePinPositions);
-  window.removeEventListener("keydown", handleGlobalKeydown);
   window.removeEventListener("pointermove", onThreadPointerMove);
   window.removeEventListener("pointerup", onThreadPointerUp);
   if (toastTimer) clearTimeout(toastTimer);
@@ -700,14 +890,6 @@ function handleCanvasClick(e: MouseEvent) {
   }
 }
 
-function handleGlobalKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape") {
-    if (threadDrag.value.isActive || threadDrag.value.isClickConnecting) {
-      cancelThreadDrag();
-    }
-  }
-}
-
 // Rendered coalition threads
 interface RenderedThread {
   id: string;
@@ -865,7 +1047,7 @@ function getBuildingCoalitionNames(buildingId: string): string {
     <!-- Coalition Connection Prompt Bar -->
     <transition name="fade-slide">
       <div v-if="threadDrag.isClickConnecting" class="coalition-connecting-banner">
-        <span class="banner-icon">🧵</span>
+        <Cable :size="15" :stroke-width="1.5" class="banner-icon" />
         <span class="banner-text">
           <strong>Connecting Coalition:</strong> Click another building to connect with
           {{ threadDrag.sourceBuilding?.label }}, or
@@ -879,7 +1061,7 @@ function getBuildingCoalitionNames(buildingId: string): string {
     <!-- Coalition Toast Notice (with Undo button) -->
     <transition name="fade-slide">
       <div v-if="toastNotice" class="coalition-toast-banner">
-        <span class="toast-icon">🧵</span>
+        <Cable :size="15" :stroke-width="1.5" class="toast-icon" />
         <span class="toast-text">{{ toastNotice.text }}</span>
         <button
           v-if="toastNotice.showUndo"
@@ -890,7 +1072,14 @@ function getBuildingCoalitionNames(buildingId: string): string {
         >
           ↶ Undo
         </button>
-        <button type="button" class="toast-close-btn" @click.stop="toastNotice = null">✕</button>
+        <button
+          type="button"
+          class="toast-close-btn"
+          @click.stop="toastNotice = null"
+          aria-label="Close notice"
+        >
+          <X :size="12" :stroke-width="1.5" />
+        </button>
       </div>
     </transition>
 
@@ -950,7 +1139,7 @@ function getBuildingCoalitionNames(buildingId: string): string {
           <circle r="16" class="cut-pin-hit-area" />
           <g class="cut-pin-content">
             <circle r="11" class="cut-pin-bg" :style="{ stroke: thread.color }" />
-            <text text-anchor="middle" dy="4" class="cut-pin-icon">✂</text>
+            <Scissors :size="13" :stroke-width="1.5" :x="-6.5" :y="-6.5" class="cut-pin-icon" />
           </g>
           <title>
             {{ `Disconnect coalition between ${thread.sourceLabel} and ${thread.targetLabel}` }}
@@ -976,13 +1165,40 @@ function getBuildingCoalitionNames(buildingId: string): string {
       </g>
     </svg>
 
-    <!-- Corner Office Building: Landlord, Inc. -->
-    <aside
-      class="corner-landlord-anchor"
-      aria-label="Landlord, Inc. Corporate Office in the corner"
+    <!-- Landlord, Inc. Corporate Headquarters Skyscraper (Movable) -->
+    <div
+      v-if="isShowLandlordActive"
+      :ref="(el) => setBuildingRef('landlord', el)"
+      class="spatial-building-slot spatial-landlord-slot"
+      :class="{
+        'is-active-drag': activeDragBuildingId === 'landlord',
+        'is-being-placed-upon': hoveredCollisionBuildingId === 'landlord',
+        'is-swapped': swappedBuildingIds.has('landlord'),
+        'is-repulsed': repulsedBuildingIds.has('landlord'),
+      }"
+      :style="{
+        left: `${currentLandlordPos.x}%`,
+        top: `${currentLandlordPos.y}%`,
+      }"
+      aria-label="Landlord, Inc. Corporate Headquarters"
     >
-      <LandlordBuilding :landlord-money="landlordMoney" />
-    </aside>
+      <!-- Switch places indicator pill -->
+      <transition name="fade-pop">
+        <div
+          v-if="hoveredCollisionBuildingId === 'landlord'"
+          class="switch-places-badge"
+          aria-hidden="true"
+        >
+          <span class="switch-icon">⇄</span>
+          <span class="switch-text">Switch places</span>
+        </div>
+      </transition>
+      <LandlordBuilding
+        :landlord-money="landlordMoney"
+        :can-move="isCanMoveActive"
+        @pointerdown-drag="handleLandlordPointerDownDrag"
+      />
+    </div>
 
     <!-- Spatially Scattered Residential Buildings -->
     <div
@@ -1018,10 +1234,13 @@ function getBuildingCoalitionNames(buildingId: string): string {
         :effective-color="buildingColorMap[building.id] || building.color"
         :is-in-coalition="isBuildingInCoalition(building.id)"
         :is-organized="isBuildingOrganized(building, coalitions)"
+        :coalitions="coalitions"
+        :union-count="getBuildingUnionCount(building, coalitions, buildings)"
         :coalition-names="getBuildingCoalitionNames(building.id)"
         :is-connecting-source="threadDrag.sourceBuilding?.id === building.id"
         :is-connecting-target="threadDrag.targetBuilding?.id === building.id"
         :person-width="effectivePersonWidth"
+        :can-move="isCanMoveActive"
         @tenant-select="handleTenantSelect"
         @tenant-context-menu="handleTenantSelect"
         @adjust-tenants="handleOpenAdjustModal"
@@ -1049,6 +1268,7 @@ function getBuildingCoalitionNames(buildingId: string): string {
       :show="adjustModal.show"
       :building="adjustModal.building"
       :default-people="defaultPeople"
+      :total-buildings="buildings.length"
       @close="closeAdjustModal"
       @save="handleSaveAdjustTenants"
     />
@@ -1062,19 +1282,92 @@ function getBuildingCoalitionNames(buildingId: string): string {
       @close="closeBreakModal"
       @confirm="handleConfirmBreakCoalition"
     />
-    <!-- Bottom Corner: Shuffle Positions Floating Button -->
-    <div class="canvas-shuffle-corner">
-      <RoughButton
-        variant="secondary"
+    <!-- Bottom Corner: Actions Box (Can Move toggle & Shuffle Positions) -->
+    <div class="canvas-actions-panel" role="region" aria-label="Canvas Actions">
+      <RoughBox
+        :stroke="'#786b59'"
+        :fill="'#fcfaf6'"
+        fill-style="solid"
+        :roughness="0.5"
+        :bowing="0.3"
+        :stroke-width="1.4"
         :seed="905"
-        title="Reshuffle building layout to spread them out"
-        @click.stop="emit('shuffle-positions')"
+        class="canvas-actions-box"
       >
-        <span class="shuffle-btn-content">
-          <span class="shuffle-icon" aria-hidden="true">🔀</span>
-          <span class="shuffle-text">Shuffle pos</span>
-        </span>
-      </RoughButton>
+        <div class="canvas-actions-inner">
+          <div class="actions-header">
+            <span class="actions-title">Actions</span>
+          </div>
+
+          <div class="actions-items">
+            <!-- Can move toggle -->
+            <label class="can-move-toggle" :class="{ 'is-active': isCanMoveActive }">
+              <input
+                type="checkbox"
+                role="switch"
+                v-model="isCanMoveActive"
+                :aria-checked="isCanMoveActive"
+                class="toggle-input sr-only"
+              />
+              <span class="toggle-switch" aria-hidden="true">
+                <span class="toggle-knob" />
+              </span>
+              <span class="toggle-label">Can move</span>
+            </label>
+
+            <!-- Show landlord toggle -->
+            <label
+              class="can-move-toggle show-landlord-toggle"
+              :class="{ 'is-active': isShowLandlordActive }"
+            >
+              <input
+                type="checkbox"
+                role="switch"
+                v-model="isShowLandlordActive"
+                :aria-checked="isShowLandlordActive"
+                class="toggle-input sr-only"
+              />
+              <span class="toggle-switch" aria-hidden="true">
+                <span class="toggle-knob" />
+              </span>
+              <span class="toggle-label">Show landlord</span>
+            </label>
+
+            <!-- Space out button -->
+            <RoughButton
+              variant="secondary"
+              :seed="908"
+              title="Space nodes apart to fill available space"
+              @click.stop="handleSpaceOut"
+              class="shuffle-btn space-out-btn"
+            >
+              <span class="shuffle-btn-content">
+                <MoveHorizontal
+                  :size="14"
+                  :stroke-width="1.5"
+                  class="shuffle-icon"
+                  aria-hidden="true"
+                />
+                <span class="shuffle-text">Space out</span>
+              </span>
+            </RoughButton>
+
+            <!-- Shuffle position button -->
+            <RoughButton
+              variant="secondary"
+              :seed="906"
+              title="Reshuffle building layout to spread them out"
+              @click.stop="emit('shuffle-positions')"
+              class="shuffle-btn"
+            >
+              <span class="shuffle-btn-content">
+                <Shuffle :size="14" :stroke-width="1.5" class="shuffle-icon" aria-hidden="true" />
+                <span class="shuffle-text">Shuffle position</span>
+              </span>
+            </RoughButton>
+          </div>
+        </div>
+      </RoughBox>
     </div>
   </main>
 </template>
@@ -1097,43 +1390,168 @@ function getBuildingCoalitionNames(buildingId: string): string {
   font-weight: 800;
 }
 
-/* Corner Office: Landlord, Inc. */
-.corner-landlord-anchor {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 20;
+/* Landlord, Inc. Skyscraper Slot */
+.spatial-landlord-slot {
+  z-index: 15;
   pointer-events: auto;
 }
 
-/* Bottom Corner: Shuffle Positions */
-.canvas-shuffle-corner {
+.spatial-landlord-slot.is-active-drag {
+  z-index: 55;
+}
+
+.spatial-landlord-slot.is-being-placed-upon :deep(.glass-skyscraper-card) {
+  outline: 2.5px dashed #0284c7;
+  outline-offset: 4px;
+}
+
+/* Bottom Corner: Canvas Actions Panel */
+.canvas-actions-panel {
   position: absolute;
   bottom: 20px;
   right: 20px;
   z-index: 25;
   pointer-events: auto;
+  user-select: none;
+}
+
+.canvas-actions-box {
+  filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.12));
+}
+
+.canvas-actions-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 10px 12px;
+  min-width: 175px;
+}
+
+.actions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px dashed #d6cebf;
+  padding-bottom: 4px;
+}
+
+.actions-title {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #786b59;
+}
+
+.actions-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Can Move Toggle */
+.can-move-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 2px;
+}
+
+.toggle-input.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  background-color: #d6cebf;
+  border: 1.5px solid #786b59;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px;
+  flex-shrink: 0;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.can-move-toggle:hover .toggle-switch {
+  border-color: #574c3d;
+  background-color: #c9bfaf;
+}
+
+.can-move-toggle.is-active .toggle-switch {
+  background-color: #16a34a;
+  border-color: #14532d;
+}
+
+.can-move-toggle.is-active:hover .toggle-switch {
+  background-color: #15803d;
+}
+
+.toggle-input:focus-visible + .toggle-switch {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.toggle-knob {
+  width: 12px;
+  height: 12px;
+  background-color: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.can-move-toggle.is-active .toggle-knob {
+  transform: translateX(14px);
+}
+
+.toggle-label {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #292524;
+  letter-spacing: -0.01em;
+}
+
+/* Shuffle Button inside Actions Box */
+.shuffle-btn {
+  width: 100%;
 }
 
 .shuffle-btn-content {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 2px 4px;
+  width: 100%;
 }
 
 .shuffle-icon {
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   line-height: 1;
 }
 
 .shuffle-text {
   font-weight: 700;
-  font-size: 0.86rem;
+  font-size: 0.84rem;
   letter-spacing: -0.01em;
   color: #292524;
+  white-space: nowrap;
 }
-
 /* Spatial placement of residential buildings */
 .spatial-building-slot {
   position: absolute;

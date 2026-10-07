@@ -26,6 +26,9 @@ const {
   landlordStartingMoney,
   landlordMoney,
   events,
+  landlordPosition,
+  showLandlord,
+  isEditPosition,
 } = storeToRefs(gameStore);
 
 const isSettingUpNewGame = shallowRef(false);
@@ -59,12 +62,9 @@ function handleSubmitSetup(payload: {
       v-if="isConfigured && !isSettingUpNewGame"
       :round="round"
       :phase="phase"
-      :landlord-money="landlordMoney"
       @next-phase="gameStore.nextPhase"
       @prev-phase="gameStore.prevPhase"
       @select-phase="gameStore.setPhase"
-      @spend-landlord-money="gameStore.spendLandlordMoney"
-      @earn-landlord-money="gameStore.earnLandlordMoney"
       @new-game="handleNewGameClick"
       @add-event="gameStore.addEvent"
     />
@@ -90,15 +90,19 @@ function handleSubmitSetup(payload: {
           :landlord-starting-money="landlordStartingMoney"
           :coalition-count="coalitions.length"
           :coalitions="coalitions"
+          :building-color-map="buildingColorMap"
           :events="events"
           @add-event="gameStore.addEvent"
           @remove-event="gameStore.removeEvent"
           @spend-landlord-money="gameStore.spendLandlordMoney"
+          @earn-landlord-money="gameStore.earnLandlordMoney"
         />
       </aside>
 
       <section class="board-canvas-section" aria-label="Building Canvas">
         <BuildingCanvas
+          v-model:can-move="isEditPosition"
+          v-model:show-landlord="showLandlord"
           :buildings="buildings"
           :default-people="peoplePerBuilding"
           :coalition-connections="coalitionConnections"
@@ -106,12 +110,15 @@ function handleSubmitSetup(payload: {
           :building-color-map="buildingColorMap"
           :can-undo-coalition="canUndoCoalition"
           :landlord-money="landlordMoney"
+          :landlord-position="landlordPosition"
           :person-width="personWidth"
           :person-height="personHeight"
           :person-scale="personScale"
           @update-building-position="gameStore.updateBuildingPosition"
           @update-building-positions="gameStore.updateBuildingPositions"
+          @update-landlord-position="gameStore.updateLandlordPosition"
           @adjust-tenants="gameStore.adjustBuildingTenants"
+          @update-building="gameStore.updateBuilding"
           @toggle-union="gameStore.toggleUnion"
           @toggle-eviction="gameStore.toggleEviction"
           @connect-coalition="gameStore.connectCoalition"
@@ -127,6 +134,7 @@ function handleSubmitSetup(payload: {
 
 <style scoped>
 .app-layout {
+  height: 100vh;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -138,6 +146,7 @@ function handleSubmitSetup(payload: {
   display: flex;
   flex-direction: row;
   flex: 1;
+  min-height: 0;
   width: 100%;
   height: calc(100vh - 65px);
   overflow: hidden;
@@ -151,7 +160,10 @@ function handleSubmitSetup(payload: {
   max-width: 480px;
   background-color: #faf6ee;
   border-right: 2px solid #ded4c3;
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   z-index: 20;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
 }

@@ -1,5 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted, onBeforeUpdate } from "vue";
+import { ref, computed, watch, nextTick, onBeforeUpdate } from "vue";
+import {
+  DialogRoot,
+  DialogPortal,
+  DialogOverlay,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "reka-ui";
+import { onKeyStroke } from "@vueuse/core";
+import { Dices, X } from "lucide-vue-next";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
 
@@ -41,13 +51,25 @@ onBeforeUpdate(() => {
 });
 
 function focusInput(index: number) {
-  const el = inputRefs.value[index];
-  if (el) {
-    el.focus();
-    el.select?.();
-  }
+  nextTick(() => {
+    const el = inputRefs.value[index];
+    if (el) {
+      el.focus();
+      el.select?.();
+    }
+  });
 }
 
+function syncRollFromInput(index: number) {
+  const el = inputRefs.value[index];
+  const item = rolls.value[index];
+  if (el && item && el.value !== "" && item.value === null) {
+    const num = Number(el.value);
+    if (!isNaN(num) && num >= 0) {
+      item.value = num;
+    }
+  }
+}
 function isRollEmpty(item: RollItem | undefined): boolean {
   if (!item) return true;
   return item.value === null || (item.value as unknown) === "" || isNaN(Number(item.value));
@@ -103,16 +125,58 @@ function onRollInput(index: number) {
 }
 
 function onEnter(index: number) {
-  const current = rolls.value[index];
+  syncRollFromInput(index);
   if (index < rolls.value.length - 1) {
     focusInput(index + 1);
-  } else if (current && isRollValidNumber(current)) {
-    // Current is last and has value; next empty box will be focused
-    nextTick(() => {
+  } else {
+    const current = rolls.value[index];
+    if (isRollValidNumber(current)) {
+      ensureTrailingEmptyBox();
       focusInput(rolls.value.length - 1);
-    });
-  } else if (validRollsCount.value > 0) {
-    handleDone();
+    } else if (validRollsCount.value > 0) {
+      handleDone();
+    }
+  }
+}
+
+function onTab(index: number, e: KeyboardEvent) {
+  if (e.shiftKey) {
+    if (index > 0) {
+      e.preventDefault();
+      focusInput(index - 1);
+    }
+    return;
+  }
+
+  syncRollFromInput(index);
+  if (index < rolls.value.length - 1) {
+    e.preventDefault();
+    focusInput(index + 1);
+  } else {
+    const current = rolls.value[index];
+    if (isRollValidNumber(current)) {
+      e.preventDefault();
+      ensureTrailingEmptyBox();
+      focusInput(rolls.value.length - 1);
+    }
+  }
+}
+
+function handleBoxKeydown(index: number, e: KeyboardEvent) {
+  if (["e", "E", "+", "-", "."].includes(e.key)) {
+    e.preventDefault();
+    return;
+  }
+  if (e.key === "Backspace" && isRollEmpty(rolls.value[index]) && index > 0) {
+    e.preventDefault();
+    focusInput(index - 1);
+    return;
+  }
+  if (e.key === "Enter") {
+    e.preventDefault();
+    onEnter(index);
+  } else if (e.key === "Tab") {
+    onTab(index, e);
   }
 }
 
@@ -122,9 +186,7 @@ function addBox() {
     focusInput(rolls.value.length - 1);
   } else {
     rolls.value.push(createEmptyRoll());
-    nextTick(() => {
-      focusInput(rolls.value.length - 1);
-    });
+    focusInput(rolls.value.length - 1);
   }
 }
 
@@ -136,9 +198,7 @@ function addQuickRoll(val: number) {
     rolls.value.push({ id: `roll-${++nextRollId}`, value: val });
   }
   ensureTrailingEmptyBox();
-  nextTick(() => {
-    focusInput(rolls.value.length - 1);
-  });
+  focusInput(rolls.value.length - 1);
 }
 
 function removeRoll(index: number) {
@@ -148,18 +208,14 @@ function removeRoll(index: number) {
   } else {
     rolls.value[0]!.value = null;
   }
-  nextTick(() => {
-    const targetIdx = Math.min(index, rolls.value.length - 1);
-    focusInput(targetIdx);
-  });
+  const targetIdx = Math.min(index, rolls.value.length - 1);
+  focusInput(targetIdx);
 }
 
 function reset() {
   nextRollId = 1;
   rolls.value = [{ id: "roll-1", value: null }];
-  nextTick(() => {
-    focusInput(0);
-  });
+  focusInput(0);
 }
 
 function handleDone() {
@@ -167,16 +223,11 @@ function handleDone() {
   emit("done", total.value);
 }
 
-function handleKeydown(e: KeyboardEvent) {
-  if (!props.show) return;
-  if (e.key === "Escape") {
-    emit("close");
-  } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-    if (validRollsCount.value > 0) {
-      handleDone();
-    }
+onKeyStroke("Enter", (e) => {
+  if (props.show && (e.ctrlKey || e.metaKey) && validRollsCount.value > 0) {
+    handleDone();
   }
-}
+});
 
 watch(
   () => props.show,
@@ -187,26 +238,20 @@ watch(
   },
   { immediate: true },
 );
-
-onMounted(() => {
-  window.addEventListener("keydown", handleKeydown);
-});
-
-onUnmounted(() => {
-  window.removeEventListener("keydown", handleKeydown);
-});
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="show" class="modal-backdrop" role="presentation" @click="emit('close')">
-      <div
-        class="modal-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dice-modal-title"
-        @click.stop
-      >
+  <DialogRoot
+    :open="show"
+    @update:open="
+      (val) => {
+        if (!val) emit('close');
+      }
+    "
+  >
+    <DialogPortal>
+      <DialogOverlay class="modal-backdrop" />
+      <DialogContent class="modal-dialog">
         <RoughBox
           :stroke="'#44403c'"
           :fill="'#fefdfb'"
@@ -220,10 +265,14 @@ onUnmounted(() => {
             <!-- Modal Header -->
             <div class="modal-header">
               <div class="title-with-icon">
-                <span class="header-icon" aria-hidden="true">🎲</span>
+                <Dices :size="20" :stroke-width="1.5" class="header-icon" aria-hidden="true" />
                 <div>
-                  <h3 id="dice-modal-title" class="modal-title">Dice Roll</h3>
-                  <span class="modal-subtitle">Enter dice rolls to calculate group total</span>
+                  <DialogTitle as="h3" id="dice-modal-title" class="modal-title"
+                    >Dice Roll</DialogTitle
+                  >
+                  <DialogDescription as="span" class="modal-subtitle"
+                    >Enter dice rolls to calculate group total</DialogDescription
+                  >
                 </div>
               </div>
               <button
@@ -232,7 +281,7 @@ onUnmounted(() => {
                 aria-label="Close modal"
                 @click="emit('close')"
               >
-                ✕
+                <X :size="16" :stroke-width="1.5" />
               </button>
             </div>
 
@@ -262,37 +311,50 @@ onUnmounted(() => {
             <div class="rolls-section">
               <div class="rolls-section-header">
                 <span class="rolls-section-title">Individual Rolls</span>
-                <span class="rolls-hint">Boxes appear automatically as you enter rolls</span>
+                <span class="rolls-hint">Boxes appear as you go &bull; Enter or Tab to next</span>
               </div>
 
-              <div class="rolls-list" role="list">
-                <div v-for="(roll, index) in rolls" :key="roll.id" class="roll-row" role="listitem">
-                  <label :for="`roll-input-${roll.id}`" class="roll-badge">
-                    Roll {{ index + 1 }}
-                  </label>
-                  <input
-                    :id="`roll-input-${roll.id}`"
-                    :ref="(el) => setInputRef(el as HTMLInputElement | null, index)"
-                    v-model.number="roll.value"
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="Enter roll..."
-                    class="roll-input"
-                    :aria-label="`Dice roll ${index + 1}`"
-                    @input="onRollInput(index)"
-                    @keydown.enter.prevent="onEnter(index)"
-                  />
-                  <button
-                    type="button"
-                    class="roll-remove-btn"
-                    :title="`Remove roll ${index + 1}`"
-                    :aria-label="`Remove roll ${index + 1}`"
-                    :disabled="rolls.length === 1 && isRollEmpty(roll)"
-                    @click="removeRoll(index)"
-                  >
-                    ✕
-                  </button>
+              <div class="rolls-grid" role="list">
+                <div
+                  v-for="(roll, index) in rolls"
+                  :key="roll.id"
+                  class="roll-box"
+                  :class="{ 'has-value': isRollValidNumber(roll) }"
+                  role="listitem"
+                  @click="focusInput(index)"
+                >
+                  <div class="roll-box-header">
+                    <label :for="`roll-input-${roll.id}`" class="roll-box-label">
+                      Roll {{ index + 1 }}
+                    </label>
+                    <button
+                      v-if="!isRollEmpty(roll)"
+                      type="button"
+                      tabindex="-1"
+                      class="roll-box-remove-btn"
+                      :title="`Remove roll ${index + 1}`"
+                      :aria-label="`Remove roll ${index + 1}`"
+                      @click.stop="removeRoll(index)"
+                    >
+                      <X :size="11" :stroke-width="1.5" />
+                    </button>
+                  </div>
+                  <div class="roll-box-body">
+                    <input
+                      :id="`roll-input-${roll.id}`"
+                      :ref="(el) => setInputRef(el as HTMLInputElement | null, index)"
+                      v-model.number="roll.value"
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder=""
+                      class="roll-box-input"
+                      :aria-label="`Dice roll ${index + 1}`"
+                      autocomplete="off"
+                      @input="onRollInput(index)"
+                      @keydown="handleBoxKeydown(index, $event)"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -302,7 +364,7 @@ onUnmounted(() => {
                   <span class="quick-dice-label">Quick add:</span>
                   <div class="quick-dice-buttons">
                     <button
-                      v-for="val in [1, 2, 3, 4, 5, 6]"
+                      v-for="val in [1, 2, 3, 4, 5, 6, 7, 8]"
                       :key="val"
                       type="button"
                       class="quick-die-btn"
@@ -314,7 +376,7 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <button type="button" class="add-box-btn" @click="addBox">+ Add another box</button>
+                <button type="button" class="add-box-btn" @click="addBox">+ Add box</button>
               </div>
             </div>
 
@@ -344,9 +406,9 @@ onUnmounted(() => {
             </div>
           </div>
         </RoughBox>
-      </div>
-    </div>
-  </Teleport>
+      </DialogContent>
+    </DialogPortal>
+  </DialogRoot>
 </template>
 
 <style scoped>
@@ -540,76 +602,146 @@ onUnmounted(() => {
   font-style: italic;
 }
 
-.rolls-list {
+.rolls-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 2px 2px;
+}
+
+.roll-box {
+  position: relative;
+  background-color: #fafaf9;
+  border: 1.5px solid #d6d3d1;
+  border-radius: 8px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.roll-row {
-  display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.roll-badge {
-  min-width: 60px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: #78716c;
-}
-
-.roll-input {
-  flex: 1;
-  font-size: 1rem;
-  font-weight: 700;
-  color: #1c1917;
-  border: 1.5px solid #d6d3d1;
-  border-radius: 6px;
-  padding: 6px 10px;
-  background-color: #fafaf9;
-  outline: none;
-  font-variant-numeric: tabular-nums;
+  justify-content: space-between;
+  min-height: 80px;
+  cursor: text;
   transition: all 0.15s ease;
+  animation: box-appear 0.15s ease-out;
 }
 
-.roll-input:focus {
+@keyframes box-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.roll-box:hover {
+  border-color: #a8a29e;
+  background-color: #ffffff;
+}
+
+.roll-box:focus-within {
   border-color: #b45309;
   background-color: #ffffff;
-  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.12);
+  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.14);
 }
 
-.roll-input::placeholder {
-  color: #a8a29e;
-  font-size: 0.82rem;
-  font-weight: 500;
-  font-style: italic;
+.roll-box.has-value {
+  background-color: #fffdf5;
+  border-color: #fde68a;
 }
 
-.roll-remove-btn {
+.roll-box.has-value:hover {
+  border-color: #fcd34d;
+}
+
+.roll-box.has-value:focus-within {
+  border-color: #b45309;
+  box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.14);
+}
+
+.roll-box-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 18px;
+}
+
+.roll-box-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #78716c;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+  pointer-events: none;
+}
+
+.roll-box.has-value .roll-box-label {
+  color: #92400e;
+}
+
+.roll-box-remove-btn {
   background: none;
   border: none;
   color: #a8a29e;
-  font-size: 14px;
+  font-size: 11px;
   font-weight: bold;
   cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 4px;
-  transition: all 0.15s ease;
+  padding: 1px 4px;
+  border-radius: 3px;
   line-height: 1;
+  transition: all 0.12s ease;
+  opacity: 0.5;
 }
 
-.roll-remove-btn:hover:not(:disabled) {
+.roll-box:hover .roll-box-remove-btn,
+.roll-box:focus-within .roll-box-remove-btn {
+  opacity: 1;
+}
+
+.roll-box-remove-btn:hover {
   color: #dc2626;
   background-color: #fee2e2;
 }
 
-.roll-remove-btn:disabled {
-  opacity: 0.25;
-  cursor: default;
+.roll-box-body {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.roll-box-input {
+  width: 100%;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #1c1917;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  font-variant-numeric: tabular-nums;
+  font-family: inherit;
+  -moz-appearance: textfield;
+}
+
+.roll-box-input::-webkit-outer-spin-button,
+.roll-box-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.roll-box-input::placeholder {
+  color: #d6d3d1;
+  font-weight: 400;
+  font-size: 1.25rem;
 }
 
 /* Quick Dice & Actions */

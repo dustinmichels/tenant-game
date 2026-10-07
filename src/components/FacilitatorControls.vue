@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, shallowRef } from "vue";
+import { computed, shallowRef } from "vue";
+import { Dices, Maximize, Minimize } from "lucide-vue-next";
+import { useFullscreen } from "@vueuse/core";
 import type { GamePhase } from "../types/game";
 import RoughButton from "./RoughButton.vue";
 import RoundTracker from "./RoundTracker.vue";
-import LandlordFundsModal from "./LandlordFundsModal.vue";
 import DiceRollModal from "./DiceRollModal.vue";
 import { formatDiceRollEventText } from "../stores/game";
 import { roughGen } from "../utils/rough";
@@ -12,7 +13,6 @@ import type { PathInfo } from "../utils/rough";
 defineProps<{
   round: number;
   phase: GamePhase;
-  landlordMoney?: number;
 }>();
 
 const emit = defineEmits<{
@@ -20,8 +20,6 @@ const emit = defineEmits<{
   (e: "next-phase"): void;
   (e: "prev-phase"): void;
   (e: "select-phase", phase: GamePhase): void;
-  (e: "spend-landlord-money", amount?: number): void;
-  (e: "earn-landlord-money", amount?: number): void;
   (e: "add-event", text: string): void;
   (e: "dice-roll", total: number): void;
 }>();
@@ -34,37 +32,7 @@ function handleDiceDone(total: number) {
   isDiceModalOpen.value = false;
 }
 
-const isLandlordModalOpen = shallowRef(false);
-
-function handleSpendLandlordMoney(amount: number) {
-  emit("spend-landlord-money", amount);
-}
-
-function handleEarnLandlordMoney(amount: number) {
-  emit("earn-landlord-money", amount);
-}
-
-const isFullscreen = shallowRef(false);
-
-function toggleFullscreen() {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(() => {});
-  } else {
-    document.exitFullscreen().catch(() => {});
-  }
-}
-
-function handleFullscreenChange() {
-  isFullscreen.value = Boolean(document.fullscreenElement);
-}
-
-onMounted(() => {
-  document.addEventListener("fullscreenchange", handleFullscreenChange);
-});
-
-onUnmounted(() => {
-  document.removeEventListener("fullscreenchange", handleFullscreenChange);
-});
+const { isFullscreen, toggle: toggleFullscreen } = useFullscreen();
 
 // Sketched bottom divider line
 const dividerPaths = computed<PathInfo[]>(() => {
@@ -103,21 +71,8 @@ const dividerPaths = computed<PathInfo[]>(() => {
           @select-phase="(p) => emit('select-phase', p)"
         />
       </div>
-      <!-- Right Controls: Fullscreen and New Game -->
-      <!-- Right Controls: Landlord spend/earns, Fullscreen, and New Game -->
+      <!-- Right Controls: Dice roll, Fullscreen, and New Game -->
       <div class="right-controls">
-        <RoughButton
-          variant="warning"
-          :seed="907"
-          title="Manage Landlord Funds (Spend / Earn)"
-          @click="isLandlordModalOpen = true"
-        >
-          <span class="landlord-btn-content">
-            <span class="landlord-btn-icon" aria-hidden="true">💸</span>
-            <span class="landlord-btn-text">Landlord spend/earns</span>
-          </span>
-        </RoughButton>
-
         <RoughButton
           variant="secondary"
           :seed="909"
@@ -125,7 +80,7 @@ const dividerPaths = computed<PathInfo[]>(() => {
           @click="isDiceModalOpen = true"
         >
           <span class="dice-btn-content">
-            <span class="dice-btn-icon" aria-hidden="true">🎲</span>
+            <Dices :size="14" :stroke-width="1.5" class="dice-btn-icon" aria-hidden="true" />
             <span class="dice-btn-text">Dice roll</span>
           </span>
         </RoughButton>
@@ -137,7 +92,11 @@ const dividerPaths = computed<PathInfo[]>(() => {
             title="Toggle Fullscreen"
             @click="toggleFullscreen"
           >
-            <span>{{ isFullscreen ? "⛶" : "⛶ Full" }}</span>
+            <span style="display: inline-flex; align-items: center; gap: 4px">
+              <Minimize v-if="isFullscreen" :size="13" :stroke-width="1.5" />
+              <Maximize v-else :size="13" :stroke-width="1.5" />
+              {{ isFullscreen ? "Exit Full" : "Full" }}
+            </span>
           </RoughButton>
 
           <RoughButton
@@ -165,15 +124,6 @@ const dividerPaths = computed<PathInfo[]>(() => {
         />
       </svg>
     </div>
-
-    <!-- Landlord Spend/Earn Modal -->
-    <LandlordFundsModal
-      :show="isLandlordModalOpen"
-      :landlord-money="landlordMoney"
-      @close="isLandlordModalOpen = false"
-      @spend="handleSpendLandlordMoney"
-      @earn="handleEarnLandlordMoney"
-    />
 
     <!-- Dice Roll Modal -->
     <DiceRollModal
@@ -286,24 +236,6 @@ const dividerPaths = computed<PathInfo[]>(() => {
     justify-content: center;
     flex-wrap: wrap;
   }
-}
-
-.landlord-btn-content {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 700;
-  font-size: 0.88rem;
-}
-
-.landlord-btn-icon {
-  font-size: 0.95rem;
-  line-height: 1;
-}
-
-.landlord-btn-text {
-  font-weight: 700;
-  font-size: 0.86rem;
 }
 
 .dice-btn-content {

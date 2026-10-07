@@ -10,7 +10,7 @@ User can click a "gear" icon in each building to adjust the number of tenants (t
 
 One random person from each building should be the "instigator" and colored a special color. Different color for each building.
 
-The buildings are initially scattered in a random pattern across the canvas.
+Buildings are initially placed left-to-right, then top-to-bottom. The layout chooses the row/column count that fits the largest readable buildings in the available canvas, keeps gutters between buildings, and reserves the right edge for the landlord office and controls. Person and building sizes decrease smoothly as the total player count grows, but never expand beyond their baseline size; small games use the extra room as space between buildings. “Shuffle pos” randomizes which building occupies each safe grid slot.
 
 ## Gameplay
 
@@ -47,6 +47,5 @@ I want it to be possible to drag and drop buildings to rearrange them. Not all t
 This is a table. The rows are rounds. For each round it shows:
 
 - Landlord spending: $
-- Total organized: #
-- Evictions: #
-- Buildings organized: #
+- In union (change): # (e.g. +2)
+- Evictions (change): # (e.g. +2)

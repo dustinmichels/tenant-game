@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick, useTemplateRef } from "vue";
+import { ref, computed, watch, nextTick, useTemplateRef } from "vue";
+import { DialogRoot, DialogPortal, DialogOverlay, DialogContent, DialogTitle } from "reka-ui";
+import { Building2, Banknote, Coins, X } from "lucide-vue-next";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
 import { formatCurrency, formatCompactCurrency, parseCustomAmount } from "../utils/currency";
@@ -85,33 +87,20 @@ function handleEnterKey(e: KeyboardEvent) {
     handleCustomSpend();
   }
 }
-
-function handleKeydown(e: KeyboardEvent) {
-  if (!props.show) return;
-  if (e.key === "Escape") {
-    emit("close");
-  }
-}
-
-onMounted(() => {
-  window.addEventListener("keydown", handleKeydown);
-});
-
-onUnmounted(() => {
-  window.removeEventListener("keydown", handleKeydown);
-});
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="show" class="modal-backdrop" role="presentation" @click="emit('close')">
-      <div
-        class="modal-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="landlord-modal-title"
-        @click.stop
-      >
+  <DialogRoot
+    :open="show"
+    @update:open="
+      (val) => {
+        if (!val) emit('close');
+      }
+    "
+  >
+    <DialogPortal>
+      <DialogOverlay class="modal-backdrop" />
+      <DialogContent class="modal-dialog">
         <RoughBox
           :stroke="'#78350f'"
           :fill="'#fefdfb'"
@@ -125,8 +114,10 @@ onUnmounted(() => {
             <!-- Modal Header -->
             <div class="modal-header">
               <div class="title-with-icon">
-                <span class="header-icon" aria-hidden="true">🏢</span>
-                <h3 id="landlord-modal-title" class="modal-title">Landlord Funds: Spend / Earn</h3>
+                <Building2 :size="18" :stroke-width="1.5" class="header-icon" aria-hidden="true" />
+                <DialogTitle as="h3" id="landlord-modal-title" class="modal-title"
+                  >Landlord Funds: Spend / Earn</DialogTitle
+                >
               </div>
               <button
                 type="button"
@@ -135,7 +126,7 @@ onUnmounted(() => {
                 aria-label="Close modal"
                 @click="emit('close')"
               >
-                ✕
+                <X :size="16" :stroke-width="1.5" />
               </button>
             </div>
 
@@ -155,7 +146,7 @@ onUnmounted(() => {
               <span class="group-label">Quick Actions</span>
               <div class="default-buttons-row">
                 <RoughButton
-                  variant="warning"
+                  variant="danger"
                   :disabled="(landlordMoney ?? 0) <= 0"
                   :seed="941"
                   title="Landlord spends $50,000"
@@ -163,7 +154,7 @@ onUnmounted(() => {
                   @click="handleSpendDefault"
                 >
                   <span class="btn-inner">
-                    <span class="btn-icon" aria-hidden="true">💸</span>
+                    <Banknote :size="16" :stroke-width="1.5" class="btn-icon" aria-hidden="true" />
                     <span class="btn-text">Landlord spends 50k</span>
                   </span>
                 </RoughButton>
@@ -176,7 +167,7 @@ onUnmounted(() => {
                   @click="handleEarnDefault"
                 >
                   <span class="btn-inner">
-                    <span class="btn-icon" aria-hidden="true">💰</span>
+                    <Coins :size="16" :stroke-width="1.5" class="btn-icon" aria-hidden="true" />
                     <span class="btn-text">Landlord earns 50k</span>
                   </span>
                 </RoughButton>
@@ -216,7 +207,7 @@ onUnmounted(() => {
               <!-- Action buttons for custom amount -->
               <div class="custom-buttons-row">
                 <RoughButton
-                  variant="warning"
+                  variant="danger"
                   :disabled="!isCustomValid || (landlordMoney ?? 0) <= 0"
                   :seed="943"
                   :title="
@@ -228,7 +219,7 @@ onUnmounted(() => {
                   @click="handleCustomSpend"
                 >
                   <span class="btn-inner">
-                    <span class="btn-icon" aria-hidden="true">💸</span>
+                    <Banknote :size="16" :stroke-width="1.5" class="btn-icon" aria-hidden="true" />
                     <span class="btn-text">
                       {{ isCustomValid ? `Spend ${formattedCustomCompact}` : "Spend Custom" }}
                     </span>
@@ -248,7 +239,7 @@ onUnmounted(() => {
                   @click="handleCustomEarn"
                 >
                   <span class="btn-inner">
-                    <span class="btn-icon" aria-hidden="true">💰</span>
+                    <Coins :size="16" :stroke-width="1.5" class="btn-icon" aria-hidden="true" />
                     <span class="btn-text">
                       {{ isCustomValid ? `Earn ${formattedCustomCompact}` : "Earn Custom" }}
                     </span>
@@ -270,9 +261,9 @@ onUnmounted(() => {
             </div>
           </div>
         </RoughBox>
-      </div>
-    </div>
-  </Teleport>
+      </DialogContent>
+    </DialogPortal>
+  </DialogRoot>
 </template>
 
 <style scoped>

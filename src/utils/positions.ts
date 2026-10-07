@@ -1,4 +1,5 @@
 import type { BuildingDimensions, BuildingPositionUpdate } from "../types/game";
+import { BUILDING_GAP_PX, getBuildingGridDimensions, getBuildingGridMetrics } from "./layout";
 
 export const DEFAULT_BUILDING_DIMENSIONS: BuildingDimensions = {
   w: 26,
@@ -7,11 +8,11 @@ export const DEFAULT_BUILDING_DIMENSIONS: BuildingDimensions = {
 
 export const CANVAS_BOUNDS = {
   minX: 2,
-  maxX: 72,
+  maxX: 84,
   minY: 2,
-  maxY: 68,
-  landlordMinX: 72,
-  landlordMaxY: 28,
+  maxY: 72,
+  landlordMinX: 86,
+  landlordMaxY: 0,
 };
 
 export function checkBuildingOverlap(
@@ -61,8 +62,14 @@ export function clampBuildingPosition(
   let cx = Math.max(bounds.minX, Math.min(bounds.maxX, pos.x));
   let cy = Math.max(bounds.minY, Math.min(bounds.maxY, pos.y));
 
-  // Avoid Landlord office in top-right corner
-  if (cx >= bounds.landlordMinX && cy <= bounds.landlordMaxY) {
+  // If landlord bounds are specified and active, avoid that designated area
+  if (
+    typeof bounds.landlordMaxY === "number" &&
+    bounds.landlordMaxY > 0 &&
+    typeof bounds.landlordMinX === "number" &&
+    cx >= bounds.landlordMinX &&
+    cy <= bounds.landlordMaxY
+  ) {
     const distToLeft = cx - (bounds.landlordMinX - 1);
     const distToBottom = bounds.landlordMaxY + 1 - cy;
     if (distToLeft < distToBottom) {
@@ -146,106 +153,49 @@ export function repulseBuildingFrom(
 }
 
 /**
- * Calculates optimal grid rows and columns for a given building count.
- * Arranges buildings from left to right, up to down.
+ * Generates deterministic row-major positions that use the residential area
+ * while preserving a full gutter between adjacent grid cells.
  */
-export function getBuildingGridDimensions(count: number): { cols: number; rows: number } {
-  if (count <= 1) return { cols: 1, rows: 1 };
-  if (count === 2) return { cols: 2, rows: 1 };
-  if (count <= 4) return { cols: 2, rows: 2 };
-  if (count <= 6) return { cols: 2, rows: 3 };
-  if (count <= 8) return { cols: 2, rows: 4 };
-  if (count <= 12) return { cols: 3, rows: Math.ceil(count / 3) };
-  if (count <= 20) return { cols: 4, rows: Math.ceil(count / 4) };
-  if (count <= 30) return { cols: 5, rows: Math.ceil(count / 5) };
-  const cols = Math.min(6, Math.ceil(Math.sqrt(count * 1.2)));
-  const rows = Math.ceil(count / cols);
-  return { cols, rows };
-}
-
-/**
- * Generates natural, organic default positions across the canvas that fill the space nicely
- * while preserving a predictable top-left to bottom-right order by building number
- * (Building 1 in top left, Building 2 in top right, Building 3 in middle left, etc.).
- * Applies subtle organic offsets to avoid a stiff/rigid grid look, and respects canvas bounds.
- */
-export function generateDefaultPositions(count: number): Array<{ x: number; y: number }> {
+export function generateDefaultPositions(
+  count: number,
+  peoplePerBuilding = 8,
+  canvasWidth = 1050,
+  canvasHeight = 750,
+): Array<{ x: number; y: number }> {
   if (count <= 0) return [];
-  if (count === 1) {
-    const jx = (Math.random() - 0.5) * 3;
-    const jy = (Math.random() - 0.5) * 3;
-    return [{ x: Math.round((18 + jx) * 10) / 10, y: Math.round((14 + jy) * 10) / 10 }];
-  }
 
-  const { cols, rows } = getBuildingGridDimensions(count);
+  const width = Math.max(1, canvasWidth);
+  const height = Math.max(1, canvasHeight);
+  const { cols, rows } = getBuildingGridDimensions(count, peoplePerBuilding, width, height);
+  const { originX, originY, cellWidth, cellHeight } = getBuildingGridMetrics(
+    cols,
+    rows,
+    width,
+    height,
+  );
 
-  let baseColX: number[];
-  if (cols === 1) {
-    baseColX = [5];
-  } else if (cols === 2) {
-    baseColX = [5, 48];
-  } else if (cols === 3) {
-    baseColX = [4, 32, 60];
-  } else if (cols === 4) {
-    baseColX = [3, 22, 42, 62];
-  } else {
-    const xMin = 2.5;
-    const xMax = 63;
-    const stepX = (xMax - xMin) / (cols - 1);
-    baseColX = Array.from({ length: cols }, (_, c) => Math.round((xMin + c * stepX) * 10) / 10);
-  }
-
-  let baseRowY: number[];
-  if (rows === 1) {
-    baseRowY = [8];
-  } else if (rows === 2) {
-    baseRowY = [7, 52];
-  } else if (rows === 3) {
-    baseRowY = [5, 36, 68];
-  } else {
-    const yMin = 4;
-    const yMax = Math.min(80, 68 + (rows - 3) * 6);
-    const stepY = (yMax - yMin) / (rows - 1);
-    baseRowY = Array.from({ length: rows }, (_, r) => Math.round((yMin + r * stepY) * 10) / 10);
-  }
-
-  const positions: Array<{ x: number; y: number }> = [];
-  for (let i = 0; i < count; i++) {
-    const r = Math.floor(i / cols);
-    const c = i % cols;
-
-    // Subtle row staggering and organic jitter for a natural, hand-drawn look that fills space
-    const staggerX = r % 2 === 1 ? (cols === 2 ? 1.5 : -1.0) : 0;
-    const jx = (Math.random() - 0.5) * 3.5;
-    const jy = (Math.random() - 0.5) * 3.0;
-
-    const rawX = baseColX[c]! + staggerX + jx;
-    const rawY = baseRowY[r]! + jy;
-
-    const clamped = clampBuildingPosition({ x: rawX, y: rawY });
-    positions.push({
-      x: clamped.x,
-      y: clamped.y,
-    });
-  }
-  return positions;
-}
-
-/**
- * Generates scattered/randomized coordinates across the building canvas without overlaps.
- * Used when the facilitator clicks "Shuffle pos".
- */
-export function generateScatteredPositions(count: number): Array<{ x: number; y: number }> {
-  if (count <= 0) return [];
-  const defaultPositions = generateDefaultPositions(count);
-  const scattered = defaultPositions.map((pos) => {
-    const jx = (Math.random() - 0.5) * 4.0;
-    const jy = (Math.random() - 0.5) * 4.0;
+  return Array.from({ length: count }, (_, index) => {
+    const row = Math.floor(index / cols);
+    const col = index % cols;
     return clampBuildingPosition({
-      x: pos.x + jx,
-      y: pos.y + jy,
+      x: ((originX + col * (cellWidth + BUILDING_GAP_PX)) / width) * 100,
+      y: ((originY + row * (cellHeight + BUILDING_GAP_PX)) / height) * 100,
     });
   });
+}
+
+/**
+ * Randomizes which building occupies each well-spaced grid slot.
+ * Used when the facilitator clicks "Shuffle pos".
+ */
+export function generateScatteredPositions(
+  count: number,
+  peoplePerBuilding = 8,
+  canvasWidth = 1050,
+  canvasHeight = 750,
+): Array<{ x: number; y: number }> {
+  if (count <= 0) return [];
+  const scattered = generateDefaultPositions(count, peoplePerBuilding, canvasWidth, canvasHeight);
 
   // Fisher-Yates shuffle
   for (let i = scattered.length - 1; i > 0; i--) {
@@ -438,4 +388,334 @@ export function swapBuildingPositions(
     { id: draggedBuildingId, x: clampedTarget.x, y: clampedTarget.y },
     { id: targetBuildingId, x: clampedStart.x, y: clampedStart.y },
   ];
+}
+export interface SpaceOutNode {
+  id: string;
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+}
+
+export const DEFAULT_SPACE_OUT_BOUNDS = {
+  minX: 2.5,
+  maxX: 97.5,
+  minY: 3.0,
+  maxY: 95.0,
+};
+
+export const DEFAULT_ACTION_PANEL_BOUNDS = {
+  minX: 81.0,
+  minY: 77.0,
+};
+
+const DEFAULT_FALLBACK_NODE_DIM: BuildingDimensions = {
+  w: 16,
+  h: 22,
+};
+
+/**
+ * Spaces out nodes away from each other so they move apart and fill all available canvas space.
+ * Uses center-of-mass dispersion, n-body force relaxation, boundary clamping, and
+ * action-panel avoidance.
+ */
+export function spaceOutNodes(
+  nodes: SpaceOutNode[],
+  dimensionsMap?: Record<string, BuildingDimensions>,
+  bounds = DEFAULT_SPACE_OUT_BOUNDS,
+  actionPanelBounds: { minX: number; minY: number } | null = DEFAULT_ACTION_PANEL_BOUNDS,
+  iterations = 80,
+): Array<{ id: string; x: number; y: number }> {
+  if (!nodes || nodes.length === 0) return [];
+
+  const resolved = nodes.map((n) => {
+    const dim =
+      dimensionsMap?.[n.id] ?? (n.w && n.h ? { w: n.w, h: n.h } : DEFAULT_FALLBACK_NODE_DIM);
+    const w = Math.max(4, dim.w);
+    const h = Math.max(4, dim.h);
+    return {
+      id: n.id,
+      x: n.x,
+      y: n.y,
+      w,
+      h,
+    };
+  });
+
+  if (resolved.length === 1) {
+    const n = resolved[0]!;
+    const minX = bounds.minX;
+    const maxX = Math.max(minX, bounds.maxX - n.w);
+    const minY = bounds.minY;
+    const maxY = Math.max(minY, bounds.maxY - n.h);
+    return [
+      {
+        id: n.id,
+        x: Math.round(((minX + maxX) / 2) * 10) / 10,
+        y: Math.round(((minY + maxY) / 2) * 10) / 10,
+      },
+    ];
+  }
+
+  // Helper to clamp center to keep card inside bounds and out of action panel
+  function clampCenter(cx: number, cy: number, w: number, h: number): { cx: number; cy: number } {
+    const minCx = bounds.minX + w / 2;
+    const maxCx = Math.max(minCx, bounds.maxX - w / 2);
+    const minCy = bounds.minY + h / 2;
+    const maxCy = Math.max(minCy, bounds.maxY - h / 2);
+
+    let clampedCx = Math.max(minCx, Math.min(maxCx, cx));
+    let clampedCy = Math.max(minCy, Math.min(maxCy, cy));
+
+    if (actionPanelBounds) {
+      const right = clampedCx + w / 2;
+      const bottom = clampedCy + h / 2;
+      const margin = 1.0;
+      if (right > actionPanelBounds.minX - margin && bottom > actionPanelBounds.minY - margin) {
+        const pushLeft = right - (actionPanelBounds.minX - margin);
+        const pushUp = bottom - (actionPanelBounds.minY - margin);
+        if (pushLeft <= pushUp) {
+          clampedCx -= pushLeft;
+        } else {
+          clampedCy -= pushUp;
+        }
+        clampedCx = Math.max(minCx, clampedCx);
+        clampedCy = Math.max(minCy, clampedCy);
+      }
+    }
+
+    return { cx: clampedCx, cy: clampedCy };
+  }
+
+  // 1. Center of mass & initial outward dispersion
+  const centers = resolved.map((n) => ({
+    cx: n.x + n.w / 2,
+    cy: n.y + n.h / 2,
+  }));
+
+  const avgCx = centers.reduce((sum, c) => sum + c.cx, 0) / centers.length;
+  const avgCy = centers.reduce((sum, c) => sum + c.cy, 0) / centers.length;
+
+  const targetMinX = bounds.minX + 2;
+  const targetMaxX = bounds.maxX - 2;
+  const targetMinY = bounds.minY + 2;
+  const targetMaxY = bounds.maxY - 2;
+
+  const targetCx = (targetMinX + targetMaxX) / 2;
+  const targetCy = (targetMinY + targetMaxY) / 2;
+
+  const spreadX = Math.max(...centers.map((c) => Math.abs(c.cx - avgCx)), 0.1);
+  const spreadY = Math.max(...centers.map((c) => Math.abs(c.cy - avgCy)), 0.1);
+
+  const targetHalfW = ((targetMaxX - targetMinX) / 2) * 0.88;
+  const targetHalfH = ((targetMaxY - targetMinY) / 2) * 0.88;
+
+  const scaleX = Math.max(1.2, Math.min(5.0, targetHalfW / Math.max(spreadX, 2.0)));
+  const scaleY = Math.max(1.2, Math.min(5.0, targetHalfH / Math.max(spreadY, 2.0)));
+
+  const pos = resolved.map((n, i) => {
+    let perpX = 0;
+    let perpY = 0;
+    if (spreadY < 5.0 && resolved.length > 2) {
+      perpY = ((i % 2) * 2 - 1) * targetHalfH * 0.5;
+    }
+    if (spreadX < 5.0 && resolved.length > 2) {
+      perpX = ((i % 2) * 2 - 1) * targetHalfW * 0.5;
+    }
+
+    const jitterX = ((i % 2) - 0.5) * 1.5;
+    const jitterY = (((i + 1) % 3) - 1.0) * 2.0;
+
+    const initialCx = targetCx + (centers[i]!.cx - avgCx) * scaleX + perpX + jitterX;
+    const initialCy = targetCy + (centers[i]!.cy - avgCy) * scaleY + perpY + jitterY;
+    const clamped = clampCenter(initialCx, initialCy, n.w, n.h);
+
+    return {
+      id: n.id,
+      cx: clamped.cx,
+      cy: clamped.cy,
+      w: n.w,
+      h: n.h,
+    };
+  });
+
+  // 2. Iterative force relaxation
+  const dt = 0.5;
+  for (let it = 0; it < iterations; it++) {
+    const forces = pos.map(() => ({ fx: 0, fy: 0 }));
+    const damping = 1.0 - (it / iterations) * 0.35;
+
+    // Node-to-node repulsion
+    for (let i = 0; i < pos.length; i++) {
+      for (let j = i + 1; j < pos.length; j++) {
+        const p1 = pos[i]!;
+        const p2 = pos[j]!;
+        let dx = p1.cx - p2.cx;
+        let dy = p1.cy - p2.cy;
+
+        const reqW = (p1.w + p2.w) / 2 + 3.0;
+        const reqH = (p1.h + p2.h) / 2 + 3.0;
+
+        // If almost purely horizontal or vertical, introduce slight cross-axis deflection
+        if (Math.abs(dy) < 1.0 && Math.abs(dx) < reqW) {
+          dy = (i % 2 === 0 ? 1 : -1) * 2.5;
+        }
+        if (Math.abs(dx) < 1.0 && Math.abs(dy) < reqH) {
+          dx = (i % 2 === 0 ? 1 : -1) * 2.5;
+        }
+        let nx = dx / Math.max(reqW, 1.0);
+        let ny = dy / Math.max(reqH, 1.0);
+        let dist = Math.sqrt(nx * nx + ny * ny);
+
+        if (dist < 0.001) {
+          const angle = (i * 1.57 + j) % (Math.PI * 2);
+          dx = Math.cos(angle) * 0.1;
+          dy = Math.sin(angle) * 0.1;
+          dist = 0.1;
+          nx = dx / reqW;
+          ny = dy / reqH;
+        }
+
+        let mag: number;
+        if (dist < 1.0) {
+          mag = (1.0 - dist) * 18.0 + 6.0;
+        } else {
+          mag = Math.min(4.0, 3.0 / (dist * dist));
+        }
+
+        const fx = (nx / dist) * mag * reqW * 0.5;
+        const fy = (ny / dist) * mag * reqH * 0.5;
+
+        forces[i]!.fx += fx;
+        forces[i]!.fy += fy;
+        forces[j]!.fx -= fx;
+        forces[j]!.fy -= fy;
+      }
+    }
+
+    // Boundary repulsion & Action Panel repulsion
+    for (let i = 0; i < pos.length; i++) {
+      const p = pos[i]!;
+      const minCx = bounds.minX + p.w / 2;
+      const maxCx = Math.max(minCx, bounds.maxX - p.w / 2);
+      const minCy = bounds.minY + p.h / 2;
+      const maxCy = Math.max(minCy, bounds.maxY - p.h / 2);
+
+      const marginX = 4.0;
+      const marginY = 4.0;
+
+      if (p.cx < minCx + marginX) {
+        forces[i]!.fx += ((minCx + marginX - p.cx) / marginX) * 6.0;
+      } else if (p.cx > maxCx - marginX) {
+        forces[i]!.fx -= ((p.cx - (maxCx - marginX)) / marginX) * 6.0;
+      }
+
+      if (p.cy < minCy + marginY) {
+        forces[i]!.fy += ((minCy + marginY - p.cy) / marginY) * 6.0;
+      } else if (p.cy > maxCy - marginY) {
+        forces[i]!.fy -= ((p.cy - (maxCy - marginY)) / marginY) * 6.0;
+      }
+
+      if (actionPanelBounds) {
+        const right = p.cx + p.w / 2;
+        const bottom = p.cy + p.h / 2;
+        if (right > actionPanelBounds.minX - 3.0 && bottom > actionPanelBounds.minY - 3.0) {
+          forces[i]!.fx -= 12.0;
+          forces[i]!.fy -= 12.0;
+        }
+      }
+    }
+
+    // Apply forces and clamp
+    for (let i = 0; i < pos.length; i++) {
+      const p = pos[i]!;
+      p.cx += forces[i]!.fx * dt * damping;
+      p.cy += forces[i]!.fy * dt * damping;
+
+      const clamped = clampCenter(p.cx, p.cy, p.w, p.h);
+      p.cx = clamped.cx;
+      p.cy = clamped.cy;
+    }
+  }
+
+  // 3. Final overlap push to guarantee separation
+  for (let step = 0; step < 15; step++) {
+    let hadOverlap = false;
+    for (let i = 0; i < pos.length; i++) {
+      for (let j = i + 1; j < pos.length; j++) {
+        const p1 = pos[i]!;
+        const p2 = pos[j]!;
+
+        const left1 = p1.cx - p1.w / 2;
+        const right1 = p1.cx + p1.w / 2;
+        const top1 = p1.cy - p1.h / 2;
+        const bottom1 = p1.cy + p1.h / 2;
+
+        const left2 = p2.cx - p2.w / 2;
+        const right2 = p2.cx + p2.w / 2;
+        const top2 = p2.cy - p2.h / 2;
+        const bottom2 = p2.cy + p2.h / 2;
+
+        const overlapX = Math.min(right1, right2) - Math.max(left1, left2);
+        const overlapY = Math.min(bottom1, bottom2) - Math.max(top1, top2);
+
+        if (overlapX > 0.01 && overlapY > 0.01) {
+          hadOverlap = true;
+          const minCx1 = bounds.minX + p1.w / 2;
+          const maxCx1 = Math.max(minCx1, bounds.maxX - p1.w / 2);
+          const minCx2 = bounds.minX + p2.w / 2;
+          const maxCx2 = Math.max(minCx2, bounds.maxX - p2.w / 2);
+
+          const minCy1 = bounds.minY + p1.h / 2;
+          const maxCy1 = Math.max(minCy1, bounds.maxY - p1.h / 2);
+          const minCy2 = bounds.minY + p2.h / 2;
+          const maxCy2 = Math.max(minCy2, bounds.maxY - p2.h / 2);
+
+          const roomX = p1.cx - minCx1 + (maxCx1 - p1.cx) + (p2.cx - minCx2) + (maxCx2 - p2.cx);
+          const roomY = p1.cy - minCy1 + (maxCy1 - p1.cy) + (p2.cy - minCy2) + (maxCy2 - p2.cy);
+
+          const pushX =
+            (overlapX < overlapY || Math.abs(p1.cy - p2.cy) < 1.0) && overlapX < roomX * 0.5;
+
+          if (pushX) {
+            const shift = (overlapX + 1.0) / 2;
+            if (p1.cx <= p2.cx) {
+              p1.cx -= shift;
+              p2.cx += shift;
+            } else {
+              p1.cx += shift;
+              p2.cx += shift;
+            }
+          } else {
+            const shift = (overlapY + 1.0) / 2;
+            if (p1.cy <= p2.cy) {
+              p1.cy -= shift;
+              p2.cy += shift;
+            } else {
+              p1.cy += shift;
+              p2.cy += shift;
+            }
+          }
+
+          const c1 = clampCenter(p1.cx, p1.cy, p1.w, p1.h);
+          p1.cx = c1.cx;
+          p1.cy = c1.cy;
+          const c2 = clampCenter(p2.cx, p2.cy, p2.w, p2.h);
+          p2.cx = c2.cx;
+          p2.cy = c2.cy;
+        }
+      }
+    }
+    if (!hadOverlap) break;
+  }
+
+  return pos.map((p) => {
+    const leftX = Math.round((p.cx - p.w / 2) * 10) / 10;
+    const topY = Math.round((p.cy - p.h / 2) * 10) / 10;
+    return {
+      id: p.id,
+      x: leftX,
+      y: topY,
+    };
+  });
 }

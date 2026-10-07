@@ -75,8 +75,31 @@ describe("Coalition and Union counting logic", () => {
     const connections: CoalitionConnection[] = [{ id: "c1", sourceId: "b-1", targetId: "b-2" }];
     const groups = computeCoalitionGroups([b1, b2], connections);
 
+    expect(getBuildingUnionCount(b1, groups)).toBe(1);
+    expect(getBuildingUnionCount(b2, groups)).toBe(1);
     expect(getTotalUnionCount([b1, b2], groups)).toBe(2);
     expect(getCoalitionUnionCount([b1, b2], groups)).toBe(2);
+  });
+
+  it("0 are unionized until another has joined the instigator, or a coalition was formed with another group", () => {
+    // b1 has only 1 instigator in union
+    const b1 = makeBuilding("b-1", 1, "#e11d48", 1, 8);
+    // b2 has only 1 instigator in union
+    const b2 = makeBuilding("b-2", 2, "#2563eb", 1, 8);
+
+    // 1. Standalone with 1 instigator: 0 unionized
+    expect(getBuildingUnionCount(b1)).toBe(0);
+    expect(getBuildingUnionCount(b2)).toBe(0);
+
+    // 2. Another tenant joins instigator in b1: now 2 unionized in b1
+    const b1Joined = makeBuilding("b-1", 1, "#e11d48", 2, 8);
+    expect(getBuildingUnionCount(b1Joined)).toBe(2);
+
+    // 3. Or coalition formed with another group: each contributes their member
+    const connections: CoalitionConnection[] = [{ id: "c1", sourceId: "b-1", targetId: "b-2" }];
+    const groups = computeCoalitionGroups([b1, b2], connections);
+    expect(getBuildingUnionCount(b1, groups)).toBe(1);
+    expect(getBuildingUnionCount(b2, groups)).toBe(1);
   });
 
   it("excludes evicted tenants from coalition count and union count", () => {

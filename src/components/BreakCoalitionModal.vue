@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from "vue";
+import {
+  DialogRoot,
+  DialogPortal,
+  DialogOverlay,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "reka-ui";
+import { Scissors, X } from "lucide-vue-next";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
 
@@ -21,33 +29,20 @@ function handleConfirm() {
   }
   emit("close");
 }
-
-function handleKeydown(e: KeyboardEvent) {
-  if (!props.show) return;
-  if (e.key === "Escape") {
-    emit("close");
-  }
-}
-
-onMounted(() => {
-  window.addEventListener("keydown", handleKeydown);
-});
-
-onUnmounted(() => {
-  window.removeEventListener("keydown", handleKeydown);
-});
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="show" class="modal-backdrop" role="presentation" @click="emit('close')">
-      <div
-        class="modal-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="break-coalition-title"
-        @click.stop
-      >
+  <DialogRoot
+    :open="show"
+    @update:open="
+      (val) => {
+        if (!val) emit('close');
+      }
+    "
+  >
+    <DialogPortal>
+      <DialogOverlay class="modal-backdrop" />
+      <DialogContent class="modal-dialog">
         <RoughBox
           :stroke="'#292524'"
           :fill="'#fffdfa'"
@@ -61,8 +56,10 @@ onUnmounted(() => {
             <!-- Modal Header -->
             <div class="modal-header">
               <div class="title-with-icon">
-                <span class="header-icon" aria-hidden="true">✂️</span>
-                <h3 id="break-coalition-title" class="modal-title">Break Coalition</h3>
+                <Scissors :size="18" :stroke-width="1.5" class="header-icon" aria-hidden="true" />
+                <DialogTitle as="h3" id="break-coalition-title" class="modal-title"
+                  >Break Coalition</DialogTitle
+                >
               </div>
               <button
                 type="button"
@@ -70,13 +67,15 @@ onUnmounted(() => {
                 aria-label="Close"
                 @click="emit('close')"
               >
-                ✕
+                <X :size="16" :stroke-width="1.5" />
               </button>
             </div>
 
             <!-- Modal Body -->
             <div class="modal-body">
-              <p class="confirm-question">Are you sure you want to break this coalition?</p>
+              <DialogDescription as="p" class="confirm-question"
+                >Are you sure you want to break this coalition?</DialogDescription
+              >
               <p v-if="sourceLabel && targetLabel" class="connection-details">
                 This will disconnect <strong>{{ sourceLabel }}</strong> and
                 <strong>{{ targetLabel }}</strong
@@ -96,9 +95,9 @@ onUnmounted(() => {
             </div>
           </div>
         </RoughBox>
-      </div>
-    </div>
-  </Teleport>
+      </DialogContent>
+    </DialogPortal>
+  </DialogRoot>
 </template>
 
 <style scoped>

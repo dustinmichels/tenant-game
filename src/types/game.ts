@@ -23,6 +23,7 @@ export interface RoundTally {
   landlordSpending: number | null;
   landlordRemaining?: number | null;
   totalOrganized: number;
+  organizedChange?: number;
   evictions: number;
   totalEvictions?: number;
   buildingsOrganized: number;
@@ -97,6 +98,7 @@ export interface GameEvent {
   round?: number;
   timestamp: number;
   type?: GameEventType;
+  buildingId?: string;
 }
 
 export function isSpendEventText(text: string): boolean {
@@ -138,6 +140,8 @@ export interface GameState {
   personWidth?: number;
   personHeight?: number;
   personScale?: number;
+  landlordPosition?: { x: number; y: number };
+  showLandlord?: boolean;
 }
 
 export interface DynamicSizingResult {
@@ -159,5 +163,7 @@ export interface BuildingPositionUpdate {
 
 // Re-export domain and geometry utilities for clean access and backwards compatibility
 export * from "../utils/coalitions";
+export * from "../utils/layout";
 export * from "../utils/sizing";
 export * from "../utils/positions";
+export * from "../utils/eventLog";

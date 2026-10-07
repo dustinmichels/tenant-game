@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef } from "vue";
+import { computed, shallowRef, useTemplateRef } from "vue";
+import { useResizeObserver } from "@vueuse/core";
 import { roughGen } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
 
@@ -32,28 +33,10 @@ const emit = defineEmits<{
 const trackViewportRef = useTemplateRef<HTMLElement>("trackViewportRef");
 const trackWidth = shallowRef(240);
 
-let resizeObserver: ResizeObserver | null = null;
-
-onMounted(() => {
-  if (trackViewportRef.value) {
-    trackWidth.value = Math.max(
-      120,
-      Math.round(trackViewportRef.value.getBoundingClientRect().width),
-    );
-    resizeObserver = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry) {
-        trackWidth.value = Math.max(120, Math.round(entry.contentRect.width));
-      }
-    });
-    resizeObserver.observe(trackViewportRef.value);
-  }
-});
-
-onUnmounted(() => {
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-    resizeObserver = null;
+useResizeObserver(trackViewportRef, (entries) => {
+  const entry = entries[0];
+  if (entry) {
+    trackWidth.value = Math.max(120, Math.round(entry.contentRect.width));
   }
 });
 

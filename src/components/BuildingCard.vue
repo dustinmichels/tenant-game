@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Building, Tenant } from "../types/game";
-import { isBuildingOrganized, getTenantGridCols, BASELINE_PERSON_WIDTH } from "../types/game";
+import type { Building, Tenant, CoalitionGroup } from "../types/game";
+import {
+  isBuildingOrganized,
+  getBuildingUnionCount,
+  getTenantGridCols,
+  BASELINE_PERSON_WIDTH,
+  PERSON_ASPECT_RATIO,
+} from "../types/game";
 import { roughGen, createSeed } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
+import { getContrastTextColor } from "../utils/coalitionColors";
 import RoughBox from "./RoughBox.vue";
 import BuildingWindow from "./BuildingWindow.vue";
+import { Settings, Cable, GripVertical } from "lucide-vue-next";
 
 const props = withDefaults(
   defineProps<{
@@ -17,6 +25,9 @@ const props = withDefaults(
     isConnectingTarget?: boolean;
     personWidth?: number;
     isOrganized?: boolean;
+    unionCount?: number;
+    coalitions?: CoalitionGroup[];
+    canMove?: boolean;
   }>(),
   {
     effectiveColor: undefined,
@@ -26,6 +37,9 @@ const props = withDefaults(
     isConnectingTarget: false,
     personWidth: undefined,
     isOrganized: undefined,
+    unionCount: undefined,
+    coalitions: () => [],
+    canMove: true,
   },
 );
 const emit = defineEmits<{
@@ -46,8 +60,14 @@ const emit = defineEmits<{
 const buildingSeed = computed(() =>
   createSeed(`building_${props.building.id}_${props.building.index}`),
 );
+const effectiveUnionCount = computed(() => {
+  if (props.unionCount !== undefined) return props.unionCount;
+  return getBuildingUnionCount(props.building, props.coalitions);
+});
 const isOrganized = computed(() =>
-  props.isOrganized !== undefined ? props.isOrganized : isBuildingOrganized(props.building),
+  props.isOrganized !== undefined
+    ? props.isOrganized
+    : isBuildingOrganized(props.building, props.coalitions),
 );
 const activeColor = computed(() => props.effectiveColor || props.building.color);
 
@@ -60,7 +80,7 @@ const buildingNumber = computed(() => {
   return props.building.label || 1;
 });
 
-const isMultiDigitNumber = computed(() => String(buildingNumber.value).length > 1);
+const barTextColor = computed(() => getContrastTextColor(activeColor.value));
 
 function handlePointerDownSpool(e: PointerEvent) {
   if (e.button !== 0) return;
@@ -71,13 +91,16 @@ function handleTenantClick(e: MouseEvent, tenant: Tenant) {
 }
 
 function handleDragPointerDown(e: PointerEvent) {
+  if (!props.canMove) return;
   if (e.button !== 0) return;
   emit("pointerdown-drag", e, props.building);
 }
 const effectivePersonWidth = computed(() =>
   Math.max(20, props.personWidth ?? BASELINE_PERSON_WIDTH),
 );
-const effectivePersonHeight = computed(() => Math.round(effectivePersonWidth.value / 0.68));
+const effectivePersonHeight = computed(() =>
+  Math.round(effectivePersonWidth.value / PERSON_ASPECT_RATIO),
+);
 
 // Dynamic column layout based on tenant count
 const gridColumns = computed(() => getTenantGridCols(props.building.tenants.length));
@@ -89,8 +112,8 @@ const cardWidth = computed(() => {
   const gap = 3;
   // Width of windows grid + padding around windows (5px on each side = 10px) + rough box border/padding (10px)
   const contentWidth = cols * pw + (cols - 1) * gap + 20;
-  // Header plaque needs at least 138px to fit label, badges, gear comfortably without truncation
-  return Math.max(contentWidth, 138);
+  // Header plaque needs at least 144px to fit label, badges, gear comfortably without truncation
+  return Math.max(contentWidth, 144);
 });
 
 // Streamlined minimal rooftop parapet and cornice
@@ -114,37 +137,6 @@ const roofPaths = computed<PathInfo[]>(() => {
 
   return [cornice, parapet].flatMap((d) => roughGen.toPaths(d));
 });
-
-// Streamlined minimal ground floor entrance
-const entrancePaths = computed<PathInfo[]>(() => {
-  const s = buildingSeed.value + 50;
-  const door = roughGen.rectangle(6, 1, 20, 14, {
-    roughness: 0.45,
-    stroke: "#382f24",
-    fill: "#cbbfae",
-    fillStyle: "solid",
-    strokeWidth: 1.0,
-    seed: s + 1,
-  });
-
-  const knob = roughGen.circle(22, 8, 1.6, {
-    roughness: 0.35,
-    stroke: "#241e16",
-    fill: "#eab308",
-    fillStyle: "solid",
-    strokeWidth: 0.8,
-    seed: s + 2,
-  });
-
-  const threshold = roughGen.line(3, 15, 29, 15, {
-    roughness: 0.45,
-    stroke: "#524534",
-    strokeWidth: 1.1,
-    seed: s + 3,
-  });
-
-  return [door, knob, threshold].flatMap((d) => roughGen.toPaths(d));
-});
 </script>
 
 <template>
@@ -164,6 +156,18 @@ const entrancePaths = computed<PathInfo[]>(() => {
       '--building-cols': gridColumns,
     }"
   >
+    <!-- Building settings button in top left corner -->
+    <button
+      type="button"
+      class="building-settings-btn"
+      title="Building settings (name, color, tenants)"
+      :aria-label="`Settings for ${building.label}`"
+      @pointerdown.stop
+      @click.stop="emit('adjust-tenants', building)"
+    >
+      <Settings :size="15" :stroke-width="1.5" class="settings-gear-icon" aria-hidden="true" />
+    </button>
+
     <!-- Coalition connector circle button/pin -->
     <button
       type="button"
@@ -185,33 +189,19 @@ const entrancePaths = computed<PathInfo[]>(() => {
       :aria-label="`Connect coalition thread from ${building.label}`"
       @pointerdown.stop="handlePointerDownSpool"
     >
-      <span class="spool-icon">🧵</span>
+      <Cable :size="14" :stroke-width="1.5" class="spool-icon" aria-hidden="true" />
     </button>
-
-    <!-- Prominent Building Number Badge (Bottom-left corner circle) -->
-    <div
-      class="building-number-badge"
-      :class="{ 'is-multi-digit': isMultiDigitNumber }"
-      :style="{
-        borderColor: activeColor,
-      }"
-      :title="`${building.label} (Drag to move)`"
-      :aria-label="building.label"
-      @pointerdown="handleDragPointerDown"
-    >
-      <span class="badge-hash" aria-hidden="true">#</span>
-      <span class="badge-number">{{ buildingNumber }}</span>
-    </div>
 
     <!-- Building drag indicator handle -->
     <button
+      v-if="canMove"
       type="button"
       class="building-drag-handle"
       title="Drag to move building"
       aria-label="Drag to move building"
       @pointerdown.stop.prevent="handleDragPointerDown"
     >
-      <span class="drag-icon" aria-hidden="true">⠿</span>
+      <GripVertical :size="14" :stroke-width="1.5" class="drag-icon" aria-hidden="true" />
       <span class="drag-label">Move</span>
     </button>
     <RoughBox
@@ -228,7 +218,8 @@ const entrancePaths = computed<PathInfo[]>(() => {
         <!-- Streamlined Rooftop architectural trim (draggable) -->
         <div
           class="building-roof-area"
-          title="Drag to move building"
+          :class="{ 'is-draggable': canMove }"
+          :title="canMove ? 'Drag to move building' : undefined"
           @pointerdown="handleDragPointerDown"
         >
           <svg
@@ -260,7 +251,10 @@ const entrancePaths = computed<PathInfo[]>(() => {
             class="plaque-box"
           >
             <div class="plaque-content">
-              <div class="building-identity">
+              <div
+                class="plaque-people"
+                :title="`${building.tenants.length} total resident${building.tenants.length === 1 ? '' : 's'}`"
+              >
                 <span
                   class="building-color-dot"
                   :style="{ backgroundColor: activeColor }"
@@ -270,10 +264,15 @@ const entrancePaths = computed<PathInfo[]>(() => {
                       : `Instigator Color: ${activeColor}`
                   "
                 />
-                <span class="building-label" :title="building.label">{{ building.label }}</span>
+                <span class="plaque-count-text">
+                  <span class="badge-num">{{ building.tenants.length }}</span>
+                  <span class="badge-txt">{{
+                    building.tenants.length === 1 ? "person" : "people"
+                  }}</span>
+                </span>
               </div>
 
-              <div class="plaque-controls">
+              <div class="plaque-union">
                 <span
                   v-if="isOrganized"
                   class="organized-flag-badge"
@@ -281,21 +280,14 @@ const entrancePaths = computed<PathInfo[]>(() => {
                 >
                   ✊ Org
                 </span>
-                <div class="building-tenant-badge">
-                  <span class="badge-num">{{ building.tenants.length }}</span>
-                  <span class="badge-txt">{{
-                    building.tenants.length === 1 ? "person" : "people"
-                  }}</span>
-                </div>
-                <button
-                  type="button"
-                  class="gear-btn"
-                  title="Adjust number of tenants"
-                  aria-label="Adjust number of tenants"
-                  @click.stop="emit('adjust-tenants', building)"
+                <div
+                  class="building-union-badge"
+                  :class="{ 'has-union': effectiveUnionCount > 0 }"
+                  :title="`${effectiveUnionCount} unionized resident${effectiveUnionCount === 1 ? '' : 's'}`"
                 >
-                  ⚙
-                </button>
+                  <span class="badge-num">{{ effectiveUnionCount }}</span>
+                  <span class="badge-txt">unionized</span>
+                </div>
               </div>
             </div>
           </RoughBox>
@@ -323,18 +315,19 @@ const entrancePaths = computed<PathInfo[]>(() => {
           />
         </div>
 
-        <!-- Ground floor entrance with minimal streamlined doorway -->
-        <div class="building-ground-area">
-          <svg viewBox="0 0 32 16" class="entrance-rough-svg" aria-hidden="true">
-            <path
-              v-for="(p, idx) in entrancePaths"
-              :key="idx"
-              :d="p.d"
-              :stroke="p.stroke"
-              :stroke-width="p.strokeWidth"
-              :fill="p.fill"
-            />
-          </svg>
+        <!-- Bottom colored bar with building number/name -->
+        <div
+          class="building-bottom-bar"
+          :class="{ 'is-draggable': canMove }"
+          :style="{
+            backgroundColor: activeColor,
+            color: barTextColor,
+          }"
+          :title="canMove ? `${building.label} (Drag to move)` : building.label"
+          :aria-label="building.label"
+          @pointerdown="handleDragPointerDown"
+        >
+          <span class="building-bottom-bar-text">{{ building.label }}</span>
         </div>
       </div>
     </RoughBox>
@@ -346,7 +339,7 @@ const entrancePaths = computed<PathInfo[]>(() => {
   display: flex;
   flex-direction: column;
   position: relative;
-  min-width: 138px;
+  min-width: 144px;
   max-width: 520px;
   transition:
     transform 0.2s ease,
@@ -438,71 +431,48 @@ const entrancePaths = computed<PathInfo[]>(() => {
   pointer-events: none;
 }
 
-/* Building Number Badge (Prominent circle in bottom-left corner) */
-.building-number-badge {
-  position: absolute;
-  bottom: -10px;
-  left: -10px;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background-color: #fffdfa;
-  border: 2.5px solid var(--building-accent, #29241e);
-  color: #29241e;
-  font-family: inherit;
-  font-weight: 800;
-  font-size: 15px;
-  line-height: 1;
+/* Building Bottom Bar */
+.building-bottom-bar {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow:
-    0 2px 5px rgba(0, 0, 0, 0.18),
-    inset 0 1px 2px rgba(255, 255, 255, 0.7);
-  z-index: 25;
+  margin: 2px 4px 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  cursor: default;
   user-select: none;
   touch-action: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.building-bottom-bar.is-draggable {
   cursor: grab;
   transition:
     transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1),
     box-shadow 0.15s ease,
-    background-color 0.15s ease,
-    border-color 0.2s ease;
+    filter 0.15s ease;
 }
 
-.building-number-badge:hover {
-  transform: scale(1.15);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.24);
-  background-color: #ffffff;
+.building-bottom-bar.is-draggable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+  filter: brightness(1.06);
 }
 
-.building-number-badge:active {
-  transform: scale(1.05);
+.building-bottom-bar.is-draggable:active {
   cursor: grabbing;
+  transform: translateY(0);
 }
 
-.building-number-badge.is-multi-digit {
-  width: 34px;
-  height: 34px;
-  bottom: -11px;
-  left: -11px;
-  font-size: 13.5px;
-}
-
-.badge-hash {
-  font-size: 11px;
-  font-weight: 700;
-  opacity: 0.75;
-  margin-right: 0.5px;
-  line-height: 1;
-}
-
-.building-number-badge.is-multi-digit .badge-hash {
-  font-size: 9.5px;
-}
-
-.badge-number {
-  line-height: 1;
+.building-bottom-bar-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .building-drag-handle {
@@ -578,11 +548,15 @@ const entrancePaths = computed<PathInfo[]>(() => {
   width: 100%;
   height: 8px;
   overflow: visible;
-  cursor: grab;
+  cursor: default;
   touch-action: none;
 }
 
-.building-roof-area:active {
+.building-roof-area.is-draggable {
+  cursor: grab;
+}
+
+.building-roof-area.is-draggable:active {
   cursor: grabbing;
 }
 
@@ -611,11 +585,12 @@ const entrancePaths = computed<PathInfo[]>(() => {
   gap: 3px;
 }
 
-.building-identity {
-  display: flex;
+.plaque-people {
+  display: inline-flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
+  flex-shrink: 0;
 }
 
 .building-color-dot {
@@ -627,21 +602,21 @@ const entrancePaths = computed<PathInfo[]>(() => {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
-.building-label {
-  font-family: inherit;
-  font-size: 0.74rem;
-  font-weight: 700;
+.plaque-count-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
   color: #29241e;
-  letter-spacing: -0.01em;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.2;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.plaque-controls {
-  display: flex;
+.plaque-union {
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   flex-shrink: 0;
 }
 
@@ -654,19 +629,32 @@ const entrancePaths = computed<PathInfo[]>(() => {
   padding: 0 3px;
   border-radius: 3px;
   line-height: 1.2;
+  white-space: nowrap;
 }
 
-.building-tenant-badge {
+.building-union-badge {
   display: inline-flex;
   align-items: baseline;
   gap: 2px;
   background: #dbcfbc;
-  padding: 0 3px;
+  padding: 0 4px;
   border-radius: 3px;
-  font-size: 0.65rem;
-  color: #3b3327;
+  font-size: 0.66rem;
+  color: #574c3d;
   font-weight: 600;
   line-height: 1.2;
+  white-space: nowrap;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.building-union-badge.has-union {
+  background-color: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+  padding: 0 3px;
 }
 
 .badge-num {
@@ -674,25 +662,62 @@ const entrancePaths = computed<PathInfo[]>(() => {
   font-size: 0.72rem;
 }
 
-.gear-btn {
-  background: #fdfbf7;
-  border: 1px solid #786957;
-  border-radius: 3px;
-  font-size: 10px;
-  cursor: pointer;
-  padding: 0 3px;
-  color: #44403c;
-  display: inline-flex;
+.badge-txt {
+  font-size: 0.64rem;
+}
+.building-settings-btn {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--building-accent, #786b59);
+  background-color: #fffdfa;
+  color: #443a2f;
+  display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
-  line-height: 1.2;
+  font-size: 13px;
+  cursor: pointer;
+  z-index: 25;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.18),
+    inset 0 1px 2px rgba(255, 255, 255, 0.6);
+  transition:
+    transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.18s ease;
+  user-select: none;
+  touch-action: none;
+  padding: 0;
 }
 
-.gear-btn:hover {
-  background: #f5eedf;
-  color: #1c1917;
-  transform: rotate(25deg);
+.building-settings-btn:hover {
+  transform: scale(1.22);
+  background-color: #fef08a;
+  border-color: #a16207;
+  color: #713f12;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+}
+
+.building-settings-btn:hover .settings-gear-icon {
+  transform: rotate(45deg);
+}
+
+.settings-gear-icon {
+  display: inline-block;
+  line-height: 1;
+  transition: transform 0.25s ease;
+  pointer-events: none;
+}
+
+.building-settings-btn:active {
+  transform: scale(1.12);
+  background-color: #fde047;
+  border-color: #854d0e;
 }
 
 /* Windows Grid */
@@ -710,20 +735,5 @@ const entrancePaths = computed<PathInfo[]>(() => {
   height: var(--person-height, 110px);
   aspect-ratio: 0.68;
   flex-shrink: 0;
-}
-
-/* Ground entrance */
-.building-ground-area {
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  height: 16px;
-  width: 100%;
-}
-
-.entrance-rough-svg {
-  width: 32px;
-  height: 16px;
-  display: block;
 }
 </style>

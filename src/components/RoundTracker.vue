@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from "vue";
+import { computed } from "vue";
+import { ArrowLeft, ArrowRight } from "lucide-vue-next";
+import { onKeyStroke } from "@vueuse/core";
 import type { GamePhase } from "../types/game";
 import { PHASES } from "../types/game";
 import RoughBox from "./RoughBox.vue";
@@ -41,34 +43,29 @@ function handlePhaseClick(pId: GamePhase) {
   }
 }
 
-function handleKeydown(e: KeyboardEvent) {
-  const target = e.target as HTMLElement | null;
-  const isInput =
-    target &&
-    (target.tagName === "INPUT" ||
-      target.tagName === "TEXTAREA" ||
-      target.tagName === "SELECT" ||
-      target.isContentEditable);
-
-  if (isInput) return;
-
-  if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-    e.preventDefault();
-    emit("next");
-  } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-    if (!(props.round === 1 && props.phase === 1)) {
-      e.preventDefault();
-      emit("prev");
-    }
-  }
+function isInputElement(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return Boolean(
+    el &&
+    (el.tagName === "INPUT" ||
+      el.tagName === "TEXTAREA" ||
+      el.tagName === "SELECT" ||
+      el.isContentEditable),
+  );
 }
 
-onMounted(() => {
-  window.addEventListener("keydown", handleKeydown);
+onKeyStroke(["ArrowRight", "ArrowDown"], (e) => {
+  if (isInputElement(e.target)) return;
+  e.preventDefault();
+  emit("next");
 });
 
-onUnmounted(() => {
-  window.removeEventListener("keydown", handleKeydown);
+onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
+  if (isInputElement(e.target)) return;
+  if (!(props.round === 1 && props.phase === 1)) {
+    e.preventDefault();
+    emit("prev");
+  }
 });
 </script>
 
@@ -92,7 +89,7 @@ onUnmounted(() => {
           aria-label="Previous phase"
           @click="emit('prev')"
         >
-          <span class="arrow-char">←</span>
+          <ArrowLeft :size="15" :stroke-width="1.8" class="arrow-char" aria-hidden="true" />
         </button>
 
         <div class="tracker-main">
@@ -123,7 +120,7 @@ onUnmounted(() => {
           aria-label="Next phase"
           @click="emit('next')"
         >
-          <span class="arrow-char">→</span>
+          <ArrowRight :size="15" :stroke-width="1.8" class="arrow-char" aria-hidden="true" />
         </button>
       </div>
     </RoughBox>

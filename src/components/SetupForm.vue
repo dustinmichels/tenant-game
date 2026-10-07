@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, watch, onMounted, onUnmounted, shallowRef } from "vue";
+import { CornerDownLeft, ArrowRight } from "lucide-vue-next";
 import RoughBox from "./RoughBox.vue";
 import ParallaxCityscape from "./ParallaxCityscape.vue";
 import RoughButton from "./RoughButton.vue";
@@ -409,10 +410,15 @@ onUnmounted(() => {
             >
               <span class="btn-text">Start</span>
               <kbd class="btn-kbd">
-                <span class="kbd-symbol" aria-hidden="true">↵</span>
+                <CornerDownLeft
+                  :size="11"
+                  :stroke-width="1.5"
+                  class="kbd-symbol"
+                  aria-hidden="true"
+                />
                 <span class="kbd-text">Enter</span>
               </kbd>
-              <span class="btn-arrow" aria-hidden="true">→</span>
+              <ArrowRight :size="14" :stroke-width="1.8" class="btn-arrow" aria-hidden="true" />
             </RoughButton>
           </div>
         </form>

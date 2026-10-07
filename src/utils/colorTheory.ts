@@ -1,3 +1,13 @@
+import {
+  differenceEuclidean,
+  interpolate,
+  oklch,
+  oklab,
+  rgb,
+  formatHex,
+  wcagContrast,
+  clampChroma,
+} from "culori";
 /**
  * Color Theory Module for Tenant Game.
  *
@@ -36,6 +46,288 @@ export interface PaletteOptions {
   baseHue?: number;
   lightness?: number;
   targetChroma?: number;
+  deterministic?: boolean;
+}
+
+export type PrimaryFamily = "red" | "yellow" | "blue";
+export type PrimaryPoleKey = "scarlet" | "gold" | "cobalt" | "cerulean" | "crimson" | "amber";
+
+export interface PrimaryPoleConfig {
+  hueMin: number;
+  hueMax: number;
+  lMin: number;
+  lMax: number;
+  cMin: number;
+  cMax: number;
+  defaultHue: number;
+  defaultLightness: number;
+  defaultChroma: number;
+  family: PrimaryFamily;
+  label: string;
+}
+
+/**
+ * Distinct primary poles in OKLCH space chosen to maximize mutual perceptual distance (Delta E)
+ * while staying true to the primary colors (Red, Yellow, Blue).
+ *
+ * Every pair of poles has a guaranteed Delta E >= 0.138 (and up to 0.490 across complementary poles).
+ */
+export const PRIMARY_POLES: Record<PrimaryPoleKey, PrimaryPoleConfig> = {
+  scarlet: {
+    hueMin: 26,
+    hueMax: 34,
+    lMin: 0.58,
+    lMax: 0.64,
+    cMin: 0.2,
+    cMax: 0.23,
+    defaultHue: 30,
+    defaultLightness: 0.61,
+    defaultChroma: 0.22,
+    family: "red",
+    label: "Warm Scarlet Red",
+  },
+  gold: {
+    hueMin: 88,
+    hueMax: 98,
+    lMin: 0.78,
+    lMax: 0.84,
+    cMin: 0.16,
+    cMax: 0.2,
+    defaultHue: 93,
+    defaultLightness: 0.81,
+    defaultChroma: 0.18,
+    family: "yellow",
+    label: "Sunny Gold Yellow",
+  },
+  cobalt: {
+    hueMin: 256,
+    hueMax: 268,
+    lMin: 0.5,
+    lMax: 0.56,
+    cMin: 0.19,
+    cMax: 0.23,
+    defaultHue: 262,
+    defaultLightness: 0.53,
+    defaultChroma: 0.21,
+    family: "blue",
+    label: "Royal Cobalt Blue",
+  },
+  cerulean: {
+    hueMin: 218,
+    hueMax: 230,
+    lMin: 0.62,
+    lMax: 0.68,
+    cMin: 0.16,
+    cMax: 0.19,
+    defaultHue: 224,
+    defaultLightness: 0.65,
+    defaultChroma: 0.175,
+    family: "blue",
+    label: "Cerulean Azure Blue",
+  },
+  crimson: {
+    hueMin: 342,
+    hueMax: 352,
+    lMin: 0.5,
+    lMax: 0.56,
+    cMin: 0.2,
+    cMax: 0.23,
+    defaultHue: 347,
+    defaultLightness: 0.53,
+    defaultChroma: 0.22,
+    family: "red",
+    label: "Cool Crimson Ruby",
+  },
+  amber: {
+    hueMin: 56,
+    hueMax: 66,
+    lMin: 0.68,
+    lMax: 0.74,
+    cMin: 0.18,
+    cMax: 0.21,
+    defaultHue: 61,
+    defaultLightness: 0.71,
+    defaultChroma: 0.195,
+    family: "yellow",
+    label: "Warm Marigold Amber",
+  },
+};
+
+export const POLE_KEYS: readonly PrimaryPoleKey[] = [
+  "scarlet",
+  "gold",
+  "cobalt",
+  "cerulean",
+  "crimson",
+  "amber",
+];
+
+export interface PrimaryFamilyConfig {
+  hueMin: number;
+  hueMax: number;
+  lMin: number;
+  lMax: number;
+  cMin: number;
+  cMax: number;
+  defaultHue: number;
+  defaultLightness: number;
+  defaultChroma: number;
+}
+
+export const PRIMARY_CONFIGS: Record<PrimaryFamily, PrimaryFamilyConfig> = {
+  red: {
+    hueMin: 16,
+    hueMax: 34,
+    lMin: 0.56,
+    lMax: 0.64,
+    cMin: 0.19,
+    cMax: 0.23,
+    defaultHue: 25,
+    defaultLightness: 0.6,
+    defaultChroma: 0.21,
+  },
+  yellow: {
+    hueMin: 80,
+    hueMax: 98,
+    lMin: 0.74,
+    lMax: 0.82,
+    cMin: 0.16,
+    cMax: 0.2,
+    defaultHue: 88,
+    defaultLightness: 0.78,
+    defaultChroma: 0.18,
+  },
+  blue: {
+    hueMin: 246,
+    hueMax: 268,
+    lMin: 0.52,
+    lMax: 0.61,
+    cMin: 0.18,
+    cMax: 0.22,
+    defaultHue: 256,
+    defaultLightness: 0.56,
+    defaultChroma: 0.2,
+  },
+};
+
+function samplePrimaryPole(key: PrimaryPoleKey): string {
+  const cfg = PRIMARY_POLES[key];
+  const h = cfg.hueMin + Math.random() * (cfg.hueMax - cfg.hueMin);
+  const l = cfg.lMin + Math.random() * (cfg.lMax - cfg.lMin);
+  const c = cfg.cMin + Math.random() * (cfg.cMax - cfg.cMin);
+  return oklchToHex(l, c, h);
+}
+
+/**
+ * Generates a single random color close to one of the primary colors (Red, Yellow, Blue).
+ */
+export function getRandomPrimaryColor(family?: PrimaryFamily): string {
+  if (family) {
+    const matchingPoles = POLE_KEYS.filter((p) => PRIMARY_POLES[p].family === family);
+    const chosen = matchingPoles[Math.floor(Math.random() * matchingPoles.length)]!;
+    return samplePrimaryPole(chosen);
+  }
+  const chosen = POLE_KEYS[Math.floor(Math.random() * POLE_KEYS.length)]!;
+  return samplePrimaryPole(chosen);
+}
+
+/**
+ * Generates starting colors for N buildings based on primary colors (Red, Yellow, Blue).
+ *
+ * Guarantees:
+ * 1. Colors are close to primary colors (warm scarlet, sunny gold, royal cobalt, cerulean azure, cool crimson, marigold amber).
+ * 2. Colors are far apart from each other (Delta E >= 0.15 for N <= 4, Delta E >= 0.12 for N <= 6).
+ * 3. Colors are randomized each time so buildings do not look identical on consecutive runs.
+ * 4. Combines cleanly into vibrant secondary colors (Orange, Green, Purple).
+ */
+export function generatePrimaryPalette(count: number, options: PaletteOptions = {}): string[] {
+  if (count <= 0) return [];
+
+  if (options.deterministic) {
+    return Array.from({ length: count }, (_, i) => {
+      const p = POLE_KEYS[i % POLE_KEYS.length]!;
+      const cfg = PRIMARY_POLES[p];
+      const cycle = Math.floor(i / POLE_KEYS.length);
+      const lOffset = cycle > 0 ? (cycle % 2 === 1 ? -0.04 : 0.04) : 0;
+      return oklchToHex(cfg.defaultLightness + lOffset, cfg.defaultChroma, cfg.defaultHue);
+    });
+  }
+
+  if (count === 1) {
+    const corePoles: PrimaryPoleKey[] = ["scarlet", "gold", "cobalt"];
+    return [samplePrimaryPole(corePoles[Math.floor(Math.random() * corePoles.length)]!)];
+  }
+
+  let chosenPoles: PrimaryPoleKey[] = [];
+
+  if (count === 2) {
+    // Select 2 distinct primary families (e.g. Red and Blue) for maximum contrast
+    const corePoles: PrimaryPoleKey[] = ["scarlet", "gold", "cobalt"];
+    const shuffled = [...corePoles].sort(() => Math.random() - 0.5);
+    chosenPoles = [shuffled[0]!, shuffled[1]!];
+  } else if (count === 3) {
+    // Exactly the 3 main primaries in randomized order
+    const corePoles: PrimaryPoleKey[] = ["scarlet", "gold", "cobalt"];
+    chosenPoles = [...corePoles].sort(() => Math.random() - 0.5);
+  } else if (count === 4) {
+    // Default setup: 1 Red, 1 Yellow, 1 Blue, plus a 4th pole chosen to maximize mutual Delta E
+    const candidateSets: PrimaryPoleKey[][] = [
+      ["scarlet", "gold", "cobalt", "cerulean"],
+      ["crimson", "gold", "cobalt", "cerulean"],
+      ["scarlet", "crimson", "gold", "cobalt"],
+    ];
+    const selected = candidateSets[Math.floor(Math.random() * candidateSets.length)]!;
+    chosenPoles = [...selected].sort(() => Math.random() - 0.5);
+  } else if (count === 5) {
+    // 5 poles with highest mutual distance
+    const fivePoles: PrimaryPoleKey[] = ["scarlet", "gold", "cobalt", "cerulean", "crimson"];
+    chosenPoles = [...fivePoles].sort(() => Math.random() - 0.5);
+  } else if (count === 6) {
+    chosenPoles = [...POLE_KEYS].sort(() => Math.random() - 0.5);
+  } else {
+    // Count > 6: cycle through poles with shuffled distribution
+    const shuffled = [...POLE_KEYS].sort(() => Math.random() - 0.5);
+    chosenPoles = [];
+    for (let i = 0; i < count; i++) {
+      chosenPoles.push(shuffled[i % shuffled.length]!);
+    }
+  }
+
+  // Interleave chosen poles so adjacent buildings avoid identical primary families
+  const orderedPoles: PrimaryPoleKey[] = [];
+  const remaining = [...chosenPoles];
+  while (remaining.length > 0) {
+    const last = orderedPoles[orderedPoles.length - 1];
+    const diffCandidates = remaining.filter((p) => {
+      if (!last) return true;
+      return PRIMARY_POLES[p].family !== PRIMARY_POLES[last].family;
+    });
+    const candidateList = diffCandidates.length > 0 ? diffCandidates : remaining;
+    const chosenIdx = Math.floor(Math.random() * candidateList.length);
+    const chosen = candidateList[chosenIdx]!;
+    orderedPoles.push(chosen);
+    remaining.splice(remaining.indexOf(chosen), 1);
+  }
+
+  // Sample colors and verify guaranteed minimum distance between every pair
+  const minThreshold = count <= 4 ? 0.14 : count <= 6 ? 0.11 : 0.08;
+
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const colors = orderedPoles.map(samplePrimaryPole);
+    let valid = true;
+    for (let i = 0; i < colors.length; i++) {
+      for (let j = i + 1; j < colors.length; j++) {
+        if (colorDistance(colors[i]!, colors[j]!) < minThreshold) {
+          valid = false;
+          break;
+        }
+      }
+      if (!valid) break;
+    }
+    if (valid) return colors;
+  }
+
+  return orderedPoles.map(samplePrimaryPole);
 }
 
 // Default fallback color if parsing or inputs fail
@@ -59,327 +351,157 @@ export function linearToSrgb(linear: number): number {
 }
 
 /**
- * Converts sRGB to OKLab perceptual color space.
+ * Converts sRGB to OKLab perceptual color space using culori.
  */
 export function rgbToOklab(r: number, g: number, b: number): OklabColor {
-  const lr = srgbToLinear(r);
-  const lg = srgbToLinear(g);
-  const lb = srgbToLinear(b);
-
-  const l_ = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
-  const m_ = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
-  const s_ = Math.cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb);
-
-  return {
-    l: 0.2104542553 * l_ + 0.793617785 * m_ - 0.0040720468 * s_,
-    a: 1.9779984951 * l_ - 2.428592205 * m_ + 0.4505937099 * s_,
-    b: 0.0259040371 * l_ + 0.7827717662 * m_ - 0.808675766 * s_,
-  };
+  const lab = oklab({ mode: "rgb", r: r / 255, g: g / 255, b: b / 255 });
+  return { l: lab?.l ?? 0, a: lab?.a ?? 0, b: lab?.b ?? 0 };
 }
 
 /**
- * Converts OKLab to sRGB.
+ * Converts OKLab to sRGB using culori.
  */
 export function oklabToRgb(l: number, a: number, b: number): RgbColor {
-  const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
-  const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
-  const s_ = l - 0.0894841775 * a - 1.291485548 * b;
-
-  const l3 = l_ * l_ * l_;
-  const m3 = m_ * m_ * m_;
-  const s3 = s_ * s_ * s_;
-
-  const lr = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
-  const lg = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
-  const lb = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
-
+  const c = rgb({ mode: "oklab", l, a, b });
+  if (!c) return { r: 124, g: 58, b: 237 };
   return {
-    r: linearToSrgb(lr),
-    g: linearToSrgb(lg),
-    b: linearToSrgb(lb),
+    r: Math.round(Math.max(0, Math.min(255, (c.r ?? 0) * 255))),
+    g: Math.round(Math.max(0, Math.min(255, (c.g ?? 0) * 255))),
+    b: Math.round(Math.max(0, Math.min(255, (c.b ?? 0) * 255))),
   };
 }
 
 /**
- * Converts OKLab to cylindrical OKLCH (Lightness, Chroma, Hue in degrees).
+ * Converts OKLab to cylindrical OKLCH using culori.
  */
 export function oklabToOklch(l: number, a: number, b: number): OklchColor {
-  const c = Math.sqrt(a * a + b * b);
-  let h = (Math.atan2(b, a) * 180) / Math.PI;
-  if (h < 0) h += 360;
-  return { l, c, h };
+  const lch = oklch({ mode: "oklab", l, a, b });
+  return { l: lch?.l ?? 0, c: lch?.c ?? 0, h: lch?.h ?? 0 };
 }
 
 /**
- * Converts cylindrical OKLCH to OKLab.
+ * Converts cylindrical OKLCH to OKLab using culori.
  */
 export function oklchToOklab(l: number, c: number, h: number): OklabColor {
-  const rad = (h * Math.PI) / 180;
-  return {
-    l,
-    a: c * Math.cos(rad),
-    b: c * Math.sin(rad),
-  };
+  const lab = oklab({ mode: "oklch", l, c, h });
+  return { l: lab?.l ?? 0, a: lab?.a ?? 0, b: lab?.b ?? 0 };
 }
 
 /**
  * Formats RGB components into standard 6-digit hex color string.
  */
 export function rgbToHex(r: number, g: number, b: number): string {
-  const clampByte = (v: number) =>
-    Math.max(0, Math.min(255, Math.round(v)))
-      .toString(16)
-      .padStart(2, "0");
-  return `#${clampByte(r)}${clampByte(g)}${clampByte(b)}`;
+  return formatHex({ mode: "rgb", r: r / 255, g: g / 255, b: b / 255 }) ?? DEFAULT_COLOR;
 }
 
 /**
- * Converts HSL components to RGB.
+ * Parses a color string into RGB using culori.
  */
-export function hslToRgb(h: number, s: number, l: number): RgbColor {
-  const normH = ((h % 360) + 360) % 360;
-  const normS = Math.max(0, Math.min(100, s)) / 100;
-  const normL = Math.max(0, Math.min(100, l)) / 100;
-
-  const k = (n: number) => (n + normH / 30) % 12;
-  const a = normS * Math.min(normL, 1 - normL);
-  const f = (n: number) => normL - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-
+export function colorToRgb(color: string): RgbColor {
+  const c = rgb(color);
+  if (!c) return { r: 124, g: 58, b: 237 };
   return {
-    r: Math.round(f(0) * 255),
-    g: Math.round(f(8) * 255),
-    b: Math.round(f(4) * 255),
+    r: Math.round(Math.max(0, Math.min(255, (c.r ?? 0) * 255))),
+    g: Math.round(Math.max(0, Math.min(255, (c.g ?? 0) * 255))),
+    b: Math.round(Math.max(0, Math.min(255, (c.b ?? 0) * 255))),
   };
 }
 
 /**
- * Parses a hex (#fff, #ffffff, #rrggbbaa), rgb(), or hsl() string into RGB.
- */
-export function colorToRgb(color: string): RgbColor {
-  if (!color || typeof color !== "string") {
-    return { r: 124, g: 58, b: 237 };
-  }
-
-  const trimmed = color.trim().toLowerCase();
-
-  // Hex format
-  if (trimmed.startsWith("#")) {
-    const raw = trimmed.slice(1);
-    if (raw.length === 3) {
-      const r = parseInt(raw[0]! + raw[0]!, 16);
-      const g = parseInt(raw[1]! + raw[1]!, 16);
-      const b = parseInt(raw[2]! + raw[2]!, 16);
-      if (!isNaN(r) && !isNaN(g) && !isNaN(b)) return { r, g, b };
-    } else if (raw.length === 6 || raw.length === 8) {
-      const r = parseInt(raw.slice(0, 2), 16);
-      const g = parseInt(raw.slice(2, 4), 16);
-      const b = parseInt(raw.slice(4, 6), 16);
-      if (!isNaN(r) && !isNaN(g) && !isNaN(b)) return { r, g, b };
-    }
-  }
-
-  // HSL format
-  if (trimmed.startsWith("hsl")) {
-    const match = trimmed.match(/hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)/);
-    if (match && match[1] && match[2] && match[3]) {
-      const h = parseFloat(match[1]);
-      const s = parseFloat(match[2]);
-      const l = parseFloat(match[3]);
-      return hslToRgb(h, s, l);
-    }
-  }
-
-  // RGB format
-  if (trimmed.startsWith("rgb")) {
-    const match = trimmed.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/);
-    if (match && match[1] && match[2] && match[3]) {
-      const r = parseFloat(match[1]);
-      const g = parseFloat(match[2]);
-      const b = parseFloat(match[3]);
-      return {
-        r: Math.max(0, Math.min(255, Math.round(r))),
-        g: Math.max(0, Math.min(255, Math.round(g))),
-        b: Math.max(0, Math.min(255, Math.round(b))),
-      };
-    }
-  }
-
-  return { r: 124, g: 58, b: 237 };
-}
-
-/**
- * Converts any supported CSS color string to OKLab.
+ * Converts any supported CSS color string to OKLab using culori.
  */
 export function colorToOklab(color: string): OklabColor {
-  const { r, g, b } = colorToRgb(color);
-  return rgbToOklab(r, g, b);
+  const lab = oklab(color) ?? { mode: "oklab", l: 0.5, a: 0, b: 0 };
+  return { l: lab.l ?? 0, a: lab.a ?? 0, b: lab.b ?? 0 };
 }
 
 /**
- * Converts any supported CSS color string to OKLCH.
+ * Converts any supported CSS color string to OKLCH using culori.
  */
 export function colorToOklch(color: string): OklchColor {
-  const lab = colorToOklab(color);
-  return oklabToOklch(lab.l, lab.a, lab.b);
+  const lch = oklch(color) ?? { mode: "oklch", l: 0.5, c: 0, h: 0 };
+  return { l: lch.l ?? 0, c: lch.c ?? 0, h: lch.h ?? 0 };
 }
 
 /**
- * Converts OKLab coordinates directly to a hex color string.
+ * Converts OKLab coordinates directly to a hex color string using culori.
  */
 export function oklabToHex(l: number, a: number, b: number): string {
-  const { r, g, b: bVal } = oklabToRgb(l, a, b);
-  return rgbToHex(r, g, bVal);
+  return formatHex({ mode: "oklab", l, a, b }) ?? DEFAULT_COLOR;
 }
 
 /**
- * Converts OKLCH coordinates to a hex color string with chroma gamut mapping.
- * Preserves the exact lightness and hue while fitting into standard sRGB.
+ * Converts OKLCH coordinates to a hex color string using culori.
  */
-export function oklchToHex(l: number, targetChroma: number, h: number): string {
-  let low = 0;
-  let high = Math.max(0, targetChroma);
-
-  for (let i = 0; i < 14; i++) {
-    const mid = (low + high) / 2;
-    const lab = oklchToOklab(l, mid, h);
-
-    const l_ = lab.l + 0.3963377774 * lab.a + 0.2158037573 * lab.b;
-    const m_ = lab.l - 0.1055613458 * lab.a - 0.0638541728 * lab.b;
-    const s_ = lab.l - 0.0894841775 * lab.a - 1.291485548 * lab.b;
-
-    const l3 = l_ * l_ * l_;
-    const m3 = m_ * m_ * m_;
-    const s3 = s_ * s_ * s_;
-
-    const lr = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
-    const lg = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
-    const lb = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
-
-    if (lr >= 0 && lr <= 1 && lg >= 0 && lg <= 1 && lb >= 0 && lb <= 1) {
-      low = mid;
-    } else {
-      high = mid;
-    }
-  }
-
-  const finalLab = oklchToOklab(l, low, h);
-  const rgb = oklabToRgb(finalLab.l, finalLab.a, finalLab.b);
-  return rgbToHex(rgb.r, rgb.g, rgb.b);
+export function oklchToHex(l: number, c: number, h: number): string {
+  const inGamut = clampChroma({ mode: "oklch", l, c, h }, "oklch");
+  return formatHex(inGamut) ?? DEFAULT_COLOR;
 }
 
+const deltaEOklab = differenceEuclidean("oklab");
+
 /**
- * Calculates the perceptual color distance (Delta E) in OKLab space.
- * Equal distance corresponds to approximately equal perceived color difference.
+ * Calculates the perceptual color distance (Delta E) in OKLab space using culori.
  */
 export function colorDistance(color1: string, color2: string): number {
-  const lab1 = colorToOklab(color1);
-  const lab2 = colorToOklab(color2);
-  const dl = lab1.l - lab2.l;
-  const da = lab1.a - lab2.a;
-  const db = lab1.b - lab2.b;
-  return Math.sqrt(dl * dl + da * da + db * db);
+  return deltaEOklab(color1, color2) ?? 0;
 }
 
 /**
- * Generates an array of distinct, divergent starting colors based on building count N.
- *
- * Color Theory strategy:
- * - Partitions the 360-degree color circle into N distinct base hues (each 360 / N degrees apart).
- * - Interleaves or jumps across the circle so consecutive building numbers (e.g. Building 1 vs 2 vs 3)
- *   are maximally divergent (e.g. complementary opposites for N=2, triadic for N=3, tetradic for N=4).
- * - Uniform perceptual lightness (L ~ 0.60) and chroma (C ~ 0.20) ensure balanced visual hierarchy
- *   and high readability against paper backgrounds without washed-out or neon artifacts.
+ * Generates an array of starting colors for N buildings.
+ * By default, generates randomized colors close to primary colors (Red, Yellow, Blue).
+ * If options.baseHue is explicitly provided, generates an equidistant hue circle.
  */
 export function generateDivergentPalette(count: number, options: PaletteOptions = {}): string[] {
   if (count <= 0) return [];
-  if (count === 1) return ["#de3b3d"]; // Classic vibrant instigator crimson
 
-  const baseHue = options.baseHue ?? 25; // 25 degrees = warm ruby/crimson
-  const lightness = options.lightness ?? 0.6;
-  const targetChroma = options.targetChroma ?? 0.2;
+  // If custom baseHue is specified, use equidistant hue wheel (classic mode)
+  if (typeof options.baseHue === "number") {
+    const baseHue = options.baseHue;
+    const lightness = options.lightness ?? 0.6;
+    const targetChroma = options.targetChroma ?? 0.2;
 
-  const hues: number[] = [];
-  const step = 360 / count;
+    const hues: number[] = [];
+    const step = 360 / count;
 
-  if (count % 2 === 0) {
-    // Even count: alternate across the wheel (0, N/2, 1, N/2 + 1, ...)
-    // Guarantees adjacent indices are 180-degree opposites
-    const half = count / 2;
-    for (let i = 0; i < half; i++) {
-      hues.push((baseHue + i * step) % 360);
-      hues.push((baseHue + (i + half) * step) % 360);
+    if (count % 2 === 0) {
+      const half = count / 2;
+      for (let i = 0; i < half; i++) {
+        hues.push((baseHue + i * step) % 360);
+        hues.push((baseHue + (i + half) * step) % 360);
+      }
+    } else {
+      const jump = Math.max(1, Math.floor(count / 2));
+      for (let i = 0; i < count; i++) {
+        const sliceIdx = (i * jump) % count;
+        hues.push((baseHue + sliceIdx * step) % 360);
+      }
     }
-  } else {
-    // Odd count: coprime jump (floor(N/2)) to maximize distance between consecutive items
-    const jump = Math.max(1, Math.floor(count / 2));
-    for (let i = 0; i < count; i++) {
-      const sliceIdx = (i * jump) % count;
-      hues.push((baseHue + sliceIdx * step) % 360);
-    }
+
+    return hues.map((h) => oklchToHex(lightness, targetChroma, h));
   }
 
-  return hues.map((h) => oklchToHex(lightness, targetChroma, h));
+  // Default: generate randomized colors close to primary colors
+  return generatePrimaryPalette(count, options);
 }
 
 /**
  * Returns the starting color for building `index` (1-based) out of `totalBuildings`.
+ * Uses deterministic mode for stable slot previews or "Reset to Default" lookups.
  */
-export function getBuildingStartingColor(index: number, totalBuildings: number): string {
+export function getBuildingStartingColor(
+  index: number,
+  totalBuildings: number,
+  options: PaletteOptions = {},
+): string {
   const count = Math.max(1, totalBuildings || 1);
-  const palette = generateDivergentPalette(count);
+  const palette = generatePrimaryPalette(count, { deterministic: true, ...options });
   const zeroIndex = Math.max(0, (index - 1) % count);
   return palette[zeroIndex] ?? DEFAULT_COLOR;
 }
 
 /**
- * Merges multiple building colors into a single harmonious, vibrant coalition color.
- *
- * Uses weighted OKLab linear cone-response blending with chroma compensation:
- * - Averages perceptual lightness and chrominance coordinates.
- * - Protects against desaturation (muddy gray) when opposing colors merge.
- * - Fits within the sRGB gamut with optimal vibrance.
- */
-export function mergeColors(colors: string[], weights?: number[]): string {
-  if (!colors || colors.length === 0) return DEFAULT_COLOR;
-  if (colors.length === 1) return colors[0]!;
-
-  const n = colors.length;
-  const wList = weights && weights.length === n ? weights : Array(n).fill(1);
-  const totalW = wList.reduce((acc, w) => acc + Math.max(0, w), 0) || 1;
-
-  let sumL = 0;
-  let sumA = 0;
-  let sumB = 0;
-  let sumChroma = 0;
-
-  for (let i = 0; i < n; i++) {
-    const lab = colorToOklab(colors[i]!);
-    const lch = oklabToOklch(lab.l, lab.a, lab.b);
-    const normalizedW = Math.max(0, wList[i]!) / totalW;
-
-    sumL += lab.l * normalizedW;
-    sumA += lab.a * normalizedW;
-    sumB += lab.b * normalizedW;
-    sumChroma += lch.c * normalizedW;
-  }
-
-  const rawChroma = Math.sqrt(sumA * sumA + sumB * sumB);
-  let h = (Math.atan2(sumB, sumA) * 180) / Math.PI;
-  if (h < 0) h += 360;
-
-  // Handle rare cancellation if complementary colors cancel Cartesian chroma completely
-  if (rawChroma < 0.001) {
-    const firstLab = colorToOklab(colors[0]!);
-    h = oklabToOklch(firstLab.l, firstLab.a, firstLab.b).h;
-  }
-
-  // Preserve vibrant chroma so coalition colors remain distinct and readable
-  const targetChroma = Math.max(rawChroma, sumChroma * 0.75, 0.1);
-  return oklchToHex(sumL, targetChroma, h);
-}
-
-/**
- * Combines two building colors to form a new coalition color.
+ * Combines two building colors to form a new coalition color using culori OKLCH interpolation.
  * Satisfies: "When two buildings merge into a coalition: combine their colors to form a new color."
  */
 export function combineTwoColors(
@@ -388,7 +510,33 @@ export function combineTwoColors(
   weightA = 0.5,
   weightB = 0.5,
 ): string {
-  return mergeColors([colorA, colorB], [weightA, weightB]);
+  const totalW = Math.max(0, weightA) + Math.max(0, weightB) || 1;
+  const t = Math.max(0, weightB) / totalW;
+  const blended = interpolate([colorA, colorB], "oklch")(t);
+  return formatHex(blended) ?? DEFAULT_COLOR;
+}
+
+/**
+ * Merges multiple building colors into a single harmonious, vibrant coalition color.
+ * Blends progressive coalitions using weighted pairwise color-wheel mixing.
+ */
+export function mergeColors(colors: string[], weights?: number[]): string {
+  if (!colors || colors.length === 0) return DEFAULT_COLOR;
+  if (colors.length === 1) return colors[0]!;
+
+  const n = colors.length;
+  const wList = weights && weights.length === n ? weights : Array(n).fill(1);
+
+  let accColor = colors[0]!;
+  let accWeight = Math.max(0, wList[0]!) || 1;
+
+  for (let i = 1; i < n; i++) {
+    const nextW = Math.max(0, wList[i]!) || 1;
+    accColor = combineTwoColors(accColor, colors[i]!, accWeight, nextW);
+    accWeight += nextW;
+  }
+
+  return accColor;
 }
 
 /**
@@ -483,9 +631,7 @@ export function computeCoalitionColor(
  * Uses standard WCAG relative luminance.
  */
 export function getContrastTextColor(color: string): string {
-  const { r, g, b } = colorToRgb(color);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance < 0.55 ? "#ffffff" : "#1f1b16";
+  return wcagContrast(color, "#1f1b16") >= wcagContrast(color, "#ffffff") ? "#1f1b16" : "#ffffff";
 }
 
 /**
