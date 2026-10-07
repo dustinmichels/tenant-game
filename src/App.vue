@@ -66,6 +66,7 @@ function handleSubmitSetup(payload: {
       @spend-landlord-money="gameStore.spendLandlordMoney"
       @earn-landlord-money="gameStore.earnLandlordMoney"
       @new-game="handleNewGameClick"
+      @add-event="gameStore.addEvent"
     />
 
     <!-- Setup Screen: displayed if not configured, or if facilitator clicked New Game -->

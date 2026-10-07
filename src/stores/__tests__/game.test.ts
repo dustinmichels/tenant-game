@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import { setActivePinia, createPinia } from "pinia";
-import { useGameStore, formatEarnEventText } from "../game";
+import { useGameStore, formatEarnEventText, formatDiceRollEventText } from "../game";
 import { isSpendEvent, isSpendEventText, isEarnEvent, isEarnEventText } from "../../types/game";
 
 describe("game store event logging", () => {
@@ -247,6 +247,29 @@ describe("game store event logging", () => {
     expect(store.events[0]!.text).toBe(`Resident in ${b1.label} joined tenant union`);
     expect(store.events[1]!.type).toBe("earn");
     expect(store.events[1]!.text).toBe("landlord earns 50k");
+  });
+
+  it("formats dice roll events as 'Group rolled XX'", () => {
+    expect(formatDiceRollEventText(14)).toBe("Group rolled 14");
+    expect(formatDiceRollEventText(7)).toBe("Group rolled 7");
+    expect(formatDiceRollEventText(0)).toBe("Group rolled 0");
+  });
+
+  it("records dice roll events as general events and preserves them during undo spend", () => {
+    const store = useGameStore();
+    store.setupGame(3, 4);
+
+    store.addEvent(formatDiceRollEventText(14));
+    expect(store.events.length).toBe(1);
+    expect(store.events[0]!.text).toBe("Group rolled 14");
+    expect(store.events[0]!.type).toBe("general");
+
+    store.spendLandlordMoney(50_000);
+    expect(store.events.length).toBe(2);
+
+    store.undoLandlordSpend(50_000);
+    expect(store.events.length).toBe(1);
+    expect(store.events[0]!.text).toBe("Group rolled 14");
   });
 });
 

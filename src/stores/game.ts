@@ -370,6 +370,10 @@ export function formatEarnEventText(amount: number): string {
   return `landlord earns $${amount.toLocaleString()}`;
 }
 
+export function formatDiceRollEventText(total: number): string {
+  return `Group rolled ${total}`;
+}
+
 export const useGameStore = defineStore("game", () => {
   const initial = loadFromStorage();
 

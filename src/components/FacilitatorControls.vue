@@ -4,6 +4,8 @@ import type { GamePhase } from "../types/game";
 import RoughButton from "./RoughButton.vue";
 import RoundTracker from "./RoundTracker.vue";
 import LandlordFundsModal from "./LandlordFundsModal.vue";
+import DiceRollModal from "./DiceRollModal.vue";
+import { formatDiceRollEventText } from "../stores/game";
 import { roughGen } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
 
@@ -20,7 +22,17 @@ const emit = defineEmits<{
   (e: "select-phase", phase: GamePhase): void;
   (e: "spend-landlord-money", amount?: number): void;
   (e: "earn-landlord-money", amount?: number): void;
+  (e: "add-event", text: string): void;
+  (e: "dice-roll", total: number): void;
 }>();
+
+const isDiceModalOpen = shallowRef(false);
+
+function handleDiceDone(total: number) {
+  emit("dice-roll", total);
+  emit("add-event", formatDiceRollEventText(total));
+  isDiceModalOpen.value = false;
+}
 
 const isLandlordModalOpen = shallowRef(false);
 
@@ -106,6 +118,18 @@ const dividerPaths = computed<PathInfo[]>(() => {
           </span>
         </RoughButton>
 
+        <RoughButton
+          variant="secondary"
+          :seed="909"
+          title="Record dice roll"
+          @click="isDiceModalOpen = true"
+        >
+          <span class="dice-btn-content">
+            <span class="dice-btn-icon" aria-hidden="true">🎲</span>
+            <span class="dice-btn-text">Dice roll</span>
+          </span>
+        </RoughButton>
+
         <div class="actions-section">
           <RoughButton
             variant="secondary"
@@ -150,6 +174,13 @@ const dividerPaths = computed<PathInfo[]>(() => {
       @spend="handleSpendLandlordMoney"
       @earn="handleEarnLandlordMoney"
     />
+
+    <!-- Dice Roll Modal -->
+    <DiceRollModal
+      :show="isDiceModalOpen"
+      @close="isDiceModalOpen = false"
+      @done="handleDiceDone"
+    />
   </header>
 </template>
 
@@ -167,9 +198,9 @@ const dividerPaths = computed<PathInfo[]>(() => {
   margin: 0 auto;
   padding: 8px 24px;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
 }
 
 .brand-section {
@@ -201,11 +232,8 @@ const dividerPaths = computed<PathInfo[]>(() => {
 .round-tracker-center {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  justify-self: stretch;
-  min-width: 0;
-  width: 100%;
-  max-width: 800px;
+  justify-content: center;
+  justify-self: center;
 }
 
 .right-controls {
@@ -274,6 +302,24 @@ const dividerPaths = computed<PathInfo[]>(() => {
 }
 
 .landlord-btn-text {
+  font-weight: 700;
+  font-size: 0.86rem;
+}
+
+.dice-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.dice-btn-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.dice-btn-text {
   font-weight: 700;
   font-size: 0.86rem;
 }
