@@ -89,11 +89,36 @@ export interface CoalitionGroup {
   totalUnionCount: number;
 }
 
+export type GameEventType = "spend" | "earn" | "general";
+
 export interface GameEvent {
   id: string;
   text: string;
   round?: number;
   timestamp: number;
+  type?: GameEventType;
+}
+
+export function isSpendEventText(text: string): boolean {
+  if (!text) return false;
+  return /\bspen(?:d|ds|ding|t)\b/i.test(text);
+}
+
+export function isSpendEvent(event: GameEvent | { text: string; type?: string }): boolean {
+  if (event.type === "spend") return true;
+  if (event.type === "earn" || event.type === "general") return false;
+  return isSpendEventText(event.text);
+}
+
+export function isEarnEventText(text: string): boolean {
+  if (!text) return false;
+  return /\bearn(?:s|ed|ing)?\b/i.test(text);
+}
+
+export function isEarnEvent(event: GameEvent | { text: string; type?: string }): boolean {
+  if (event.type === "earn") return true;
+  if (event.type === "spend" || event.type === "general") return false;
+  return isEarnEventText(event.text);
 }
 
 export interface GameState {

@@ -51,6 +51,17 @@ const isOrganized = computed(() =>
 );
 const activeColor = computed(() => props.effectiveColor || props.building.color);
 
+const buildingNumber = computed(() => {
+  if (typeof props.building.index === "number" && !isNaN(props.building.index)) {
+    return props.building.index;
+  }
+  const match = props.building.label?.match(/\d+/);
+  if (match) return parseInt(match[0], 10);
+  return props.building.label || 1;
+});
+
+const isMultiDigitNumber = computed(() => String(buildingNumber.value).length > 1);
+
 function handlePointerDownSpool(e: PointerEvent) {
   if (e.button !== 0) return;
   emit("start-thread", props.building, e);
@@ -147,6 +158,7 @@ const entrancePaths = computed<PathInfo[]>(() => {
     }"
     :style="{
       width: `${cardWidth}px`,
+      '--building-accent': activeColor,
       '--person-width': `${effectivePersonWidth}px`,
       '--person-height': `${effectivePersonHeight}px`,
       '--building-cols': gridColumns,
@@ -175,6 +187,21 @@ const entrancePaths = computed<PathInfo[]>(() => {
     >
       <span class="spool-icon">🧵</span>
     </button>
+
+    <!-- Prominent Building Number Badge (Bottom-left corner circle) -->
+    <div
+      class="building-number-badge"
+      :class="{ 'is-multi-digit': isMultiDigitNumber }"
+      :style="{
+        borderColor: activeColor,
+      }"
+      :title="`${building.label} (Drag to move)`"
+      :aria-label="building.label"
+      @pointerdown="handleDragPointerDown"
+    >
+      <span class="badge-hash" aria-hidden="true">#</span>
+      <span class="badge-number">{{ buildingNumber }}</span>
+    </div>
 
     <!-- Building drag indicator handle -->
     <button
@@ -243,7 +270,7 @@ const entrancePaths = computed<PathInfo[]>(() => {
                       : `Instigator Color: ${activeColor}`
                   "
                 />
-                <span class="building-label">{{ building.label }}</span>
+                <span class="building-label" :title="building.label">{{ building.label }}</span>
               </div>
 
               <div class="plaque-controls">
@@ -409,6 +436,73 @@ const entrancePaths = computed<PathInfo[]>(() => {
   line-height: 1;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
   pointer-events: none;
+}
+
+/* Building Number Badge (Prominent circle in bottom-left corner) */
+.building-number-badge {
+  position: absolute;
+  bottom: -10px;
+  left: -10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #fffdfa;
+  border: 2.5px solid var(--building-accent, #29241e);
+  color: #29241e;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.18),
+    inset 0 1px 2px rgba(255, 255, 255, 0.7);
+  z-index: 25;
+  user-select: none;
+  touch-action: none;
+  cursor: grab;
+  transition:
+    transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.2s ease;
+}
+
+.building-number-badge:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.24);
+  background-color: #ffffff;
+}
+
+.building-number-badge:active {
+  transform: scale(1.05);
+  cursor: grabbing;
+}
+
+.building-number-badge.is-multi-digit {
+  width: 34px;
+  height: 34px;
+  bottom: -11px;
+  left: -11px;
+  font-size: 13.5px;
+}
+
+.badge-hash {
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.75;
+  margin-right: 0.5px;
+  line-height: 1;
+}
+
+.building-number-badge.is-multi-digit .badge-hash {
+  font-size: 9.5px;
+}
+
+.badge-number {
+  line-height: 1;
 }
 
 .building-drag-handle {
@@ -612,8 +706,8 @@ const entrancePaths = computed<PathInfo[]>(() => {
 }
 
 .building-windows-grid :deep(.building-window) {
-  width: var(--person-width, 38px);
-  height: var(--person-height, 56px);
+  width: var(--person-width, 75px);
+  height: var(--person-height, 110px);
   aspect-ratio: 0.68;
   flex-shrink: 0;
 }

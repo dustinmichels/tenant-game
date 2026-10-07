@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { computed, shallowRef } from "vue";
 import type { Building, RoundTally, CoalitionGroup, GameEvent } from "../types/game";
-import { getBuildingUnionCount } from "../types/game";
+import {
+  getBuildingUnionCount,
+  getTotalUnionCount,
+  getCoalitionUnionCount,
+  isSpendEvent,
+  isEarnEvent,
+} from "../types/game";
 import RoughBox from "./RoughBox.vue";
-import CoalitionTracker from "./CoalitionTracker.vue";
 import {
   formatCurrency,
   formatCompactCurrency,
@@ -19,18 +24,14 @@ const props = withDefaults(
     landlordStartingMoney?: number;
     coalitionCount?: number;
     coalitions?: CoalitionGroup[];
-    buildingColorMap?: Record<string, string>;
     events?: GameEvent[];
-    canUndoSpend?: boolean;
   }>(),
   {
     landlordMoney: undefined,
     landlordStartingMoney: undefined,
     coalitionCount: 0,
     coalitions: () => [],
-    buildingColorMap: () => ({}),
     events: () => [],
-    canUndoSpend: false,
   },
 );
 
@@ -38,7 +39,6 @@ const emit = defineEmits<{
   (e: "add-event", text: string): void;
   (e: "remove-event", id: string): void;
   (e: "spend-landlord-money", amount?: number): void;
-  (e: "undo-landlord-spend", amount?: number): void;
 }>();
 
 const newEventText = shallowRef("");
@@ -112,9 +112,21 @@ const buildingCount = computed(() => props.buildings.length);
 const totalTenants = computed(() => props.buildings.reduce((sum, b) => sum + b.tenants.length, 0));
 
 // Counting unions rule: at least 2 people needed to count as a union (standalone or via coalition)
-const unionTenantsCount = computed(() =>
-  props.buildings.reduce((sum, b) => sum + getBuildingUnionCount(b, props.coalitions), 0),
+const unionTenantsCount = computed(() => getTotalUnionCount(props.buildings, props.coalitions));
+
+const coalitionTenantsCount = computed(() =>
+  getCoalitionUnionCount(props.buildings, props.coalitions),
 );
+
+const unionPercent = computed(() => {
+  if (totalTenants.value <= 0) return 0;
+  return Math.round((unionTenantsCount.value / totalTenants.value) * 100);
+});
+
+const coalitionPercent = computed(() => {
+  if (totalTenants.value <= 0) return 0;
+  return Math.round((coalitionTenantsCount.value / totalTenants.value) * 100);
+});
 
 const totalEvictionsCount = computed(() =>
   props.buildings.reduce((sum, b) => sum + b.tenants.filter((t) => t.isEvicted).length, 0),
@@ -135,8 +147,8 @@ const totalEvictionsCount = computed(() =>
           :seed="901"
           class="metric-box"
         >
-          <div class="metric-pill">
-            <span class="metric-label">Bldgs</span>
+          <div class="metric-pill" :title="`${buildingCount} total buildings`">
+            <span class="metric-label">Buildings</span>
             <span class="metric-value">{{ buildingCount }}</span>
           </div>
         </RoughBox>
@@ -150,7 +162,10 @@ const totalEvictionsCount = computed(() =>
           :seed="903"
           class="metric-box"
         >
-          <div class="metric-pill highlight">
+          <div
+            class="metric-pill highlight"
+            :title="`${totalTenants} total tenants across all buildings`"
+          >
             <span class="metric-label">Tenants</span>
             <span class="metric-value">{{ totalTenants }}</span>
           </div>
@@ -165,30 +180,19 @@ const totalEvictionsCount = computed(() =>
           :seed="904"
           class="metric-box"
         >
-          <div class="metric-pill union">
+          <div
+            class="metric-pill union"
+            :title="`${unionTenantsCount} of ${totalTenants} tenants in union (${unionPercent}%)`"
+          >
             <span class="metric-label">In Union</span>
-            <span class="metric-value">{{ unionTenantsCount }}</span>
+            <div class="metric-value-row">
+              <span class="metric-value">{{ unionTenantsCount }}</span>
+              <span class="metric-percent">({{ unionPercent }}%)</span>
+            </div>
           </div>
         </RoughBox>
 
         <RoughBox
-          v-if="totalEvictionsCount && totalEvictionsCount > 0"
-          :stroke="'#dc2626'"
-          :fill="'#fee2e2'"
-          fill-style="solid"
-          :roughness="0.9"
-          :stroke-width="1.1"
-          :seed="906"
-          class="metric-box"
-        >
-          <div class="metric-pill evict">
-            <span class="metric-label">Evicted</span>
-            <span class="metric-value">{{ totalEvictionsCount }}</span>
-          </div>
-        </RoughBox>
-
-        <RoughBox
-          v-if="coalitionCount && coalitionCount > 0"
           :stroke="'#7c3aed'"
           :fill="'#f5f3ff'"
           fill-style="solid"
@@ -197,29 +201,15 @@ const totalEvictionsCount = computed(() =>
           :seed="908"
           class="metric-box"
         >
-          <div class="metric-pill coalition">
-            <span class="metric-label">Coalitions</span>
-            <span class="metric-value">{{ coalitionCount }}</span>
-          </div>
-        </RoughBox>
-
-        <RoughBox
-          :stroke="'#78350f'"
-          :fill="'#fef3c7'"
-          fill-style="solid"
-          :roughness="0.9"
-          :stroke-width="1.2"
-          :seed="905"
-          class="metric-box metric-landlord-funds"
-        >
           <div
-            class="metric-pill landlord-funds"
-            :title="`Remaining landlord funds: ${formatCurrency(currentLandlordMoney)}`"
+            class="metric-pill coalition"
+            :title="`${coalitionTenantsCount} of ${totalTenants} tenants in coalition (${coalitionPercent}%)`"
           >
-            <span class="metric-label">Landlord $</span>
-            <span class="metric-value money-highlight">{{
-              formatCompactCurrency(currentLandlordMoney)
-            }}</span>
+            <span class="metric-label">In Coalition</span>
+            <div class="metric-value-row">
+              <span class="metric-value">{{ coalitionTenantsCount }}</span>
+              <span class="metric-percent">({{ coalitionPercent }}%)</span>
+            </div>
           </div>
         </RoughBox>
       </div>
@@ -244,21 +234,17 @@ const totalEvictionsCount = computed(() =>
             <span class="chip-icon" aria-hidden="true">💸</span>
             <span>+ landlord spends 50k</span>
           </button>
-          <button
-            v-if="canUndoSpend"
-            type="button"
-            class="quick-undo-chip"
-            title="Undo spend (+ 50k)"
-            @click="emit('undo-landlord-spend', 50000)"
-          >
-            <span>↺ undo</span>
-          </button>
         </div>
       </div>
 
-      <!-- Bullet list of events: shown as bullet list items, in red -->
+      <!-- Bullet list of events: general events are grey/blue, spending money is red, earning money is green -->
       <ul v-if="events && events.length > 0" class="events-list">
-        <li v-for="event in events" :key="event.id" class="event-bullet-item">
+        <li
+          v-for="event in events"
+          :key="event.id"
+          class="event-bullet-item"
+          :class="{ 'is-spend': isSpendEvent(event), 'is-earn': isEarnEvent(event) }"
+        >
           <span class="event-text">{{ event.text }}</span>
           <button
             type="button"
@@ -373,13 +359,6 @@ const totalEvictionsCount = computed(() =>
         </tbody>
       </table>
     </div>
-
-    <!-- Coalitions & Buildings Tracker (Bottom of left pane) -->
-    <CoalitionTracker
-      :buildings="buildings"
-      :coalitions="coalitions"
-      :building-color-map="buildingColorMap"
-    />
   </div>
 </template>
 
@@ -428,14 +407,30 @@ const totalEvictionsCount = computed(() =>
 }
 
 .metric-label {
-  font-size: 9px;
+  font-size: 8.5px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   color: #78716c;
   font-weight: 700;
   line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
 }
 
+.metric-value-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.metric-percent {
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  opacity: 0.85;
+}
 .metric-value {
   font-size: 15px;
   font-weight: 800;
@@ -447,7 +442,8 @@ const totalEvictionsCount = computed(() =>
   color: #92400e;
 }
 
-.metric-pill.union .metric-value {
+.metric-pill.union .metric-value,
+.metric-pill.union .metric-percent {
   color: #15803d;
 }
 
@@ -455,7 +451,8 @@ const totalEvictionsCount = computed(() =>
   color: #dc2626;
 }
 
-.metric-pill.coalition .metric-value {
+.metric-pill.coalition .metric-value,
+.metric-pill.coalition .metric-percent {
   color: #6d28d9;
 }
 
@@ -584,10 +581,6 @@ const totalEvictionsCount = computed(() =>
   opacity: 0.88;
 }
 
-.metric-pill.landlord-funds .money-highlight {
-  color: #78350f;
-}
-
 .col-landlord {
   min-width: 82px;
 }
@@ -652,8 +645,8 @@ const totalEvictionsCount = computed(() =>
 .events-count {
   font-size: 0.68rem;
   font-weight: 800;
-  background-color: #fee2e2;
-  color: #dc2626;
+  background-color: #e2e8f0;
+  color: #334155;
   padding: 1px 6px;
   border-radius: 10px;
   line-height: 1.2;
@@ -689,31 +682,12 @@ const totalEvictionsCount = computed(() =>
   transform: translateY(-0.5px);
 }
 
-.quick-undo-chip {
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 2px 6px;
-  background-color: #f5f5f4;
-  color: #78716c;
-  border: 1px solid #e7e5e4;
-  border-radius: 12px;
-  cursor: pointer;
-  transition:
-    background-color 0.15s,
-    color 0.15s;
-}
-
-.quick-undo-chip:hover {
-  background-color: #e7e5e4;
-  color: #292524;
-}
-
-/* Red bullet list items */
+/* Event bullet list items: general events are grey/blue, spending money is red */
 .events-list {
   list-style-type: disc;
   margin: 0;
   padding-left: 18px;
-  color: #dc2626;
+  color: #475569;
   max-height: 150px;
   overflow-y: auto;
   display: flex;
@@ -722,22 +696,51 @@ const totalEvictionsCount = computed(() =>
 }
 
 .event-bullet-item {
-  color: #dc2626;
+  color: #475569;
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.35;
   word-break: break-word;
 }
 
 .event-bullet-item::marker {
+  color: #64748b;
+  font-size: 1.05em;
+}
+
+.event-bullet-item .event-text {
+  color: #475569;
+}
+
+/* Spending money events are styled in red */
+.event-bullet-item.is-spend {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.event-bullet-item.is-spend::marker {
   color: #dc2626;
   font-size: 1.05em;
 }
 
-.event-text {
+.event-bullet-item.is-spend .event-text {
   color: #dc2626;
 }
 
+/* Earning money events are styled in green */
+.event-bullet-item.is-earn {
+  color: #15803d;
+  font-weight: 700;
+}
+
+.event-bullet-item.is-earn::marker {
+  color: #15803d;
+  font-size: 1.05em;
+}
+
+.event-bullet-item.is-earn .event-text {
+  color: #15803d;
+}
 .event-remove-btn {
   background: none;
   border: none;

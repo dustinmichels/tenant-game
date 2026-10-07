@@ -133,8 +133,8 @@ export function getEstimatedBuildingRect(
   yPercent: number,
   canvasW: number,
   canvasH: number,
-  width = 180,
-  height = 220,
+  width = 320,
+  height = 280,
 ): BuildingRect {
   const x1 = (xPercent / 100) * canvasW;
   const y1 = (yPercent / 100) * canvasH;

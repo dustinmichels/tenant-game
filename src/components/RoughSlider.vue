@@ -62,9 +62,19 @@ const isDragging = shallowRef(false);
 const isFocused = shallowRef(false);
 const hoveredPip = shallowRef<number | null>(null);
 
-// Pad from viewport edge so the 22px thumb stays inside the track area
-const PAD = 13;
-const usableWidth = computed(() => Math.max(20, trackWidth.value - 2 * PAD));
+// Total count of steps (e.g. 8)
+const count = computed(() => props.max - props.min + 1);
+const PIP_GAP = 4;
+
+// Button width and padding so tick 1 is centered on button 1, tick 8 on button 8
+const buttonWidth = computed(() => {
+  const n = count.value;
+  if (n <= 1) return trackWidth.value;
+  return Math.max(10, (trackWidth.value - (n - 1) * PIP_GAP) / n);
+});
+
+const PAD = computed(() => buttonWidth.value / 2);
+const usableWidth = computed(() => Math.max(20, trackWidth.value - 2 * PAD.value));
 
 // Clamped integer value for slider thumb position (between min and max)
 const clampedVal = computed(() => {
@@ -75,15 +85,16 @@ const clampedVal = computed(() => {
 
 const thumbX = computed(() => {
   const range = props.max - props.min;
-  if (range <= 0) return PAD;
+  if (range <= 0) return PAD.value;
   const fraction = (clampedVal.value - props.min) / range;
-  return PAD + fraction * usableWidth.value;
+  return PAD.value + fraction * usableWidth.value;
 });
 
 // 1. Base track groove paths
 const baseTrackPaths = computed<PathInfo[]>(() => {
   const w = usableWidth.value;
-  const d = roughGen.rectangle(PAD - 2, 11, w + 4, 10, {
+  const pad = PAD.value;
+  const d = roughGen.rectangle(pad - 2, 11, w + 4, 10, {
     stroke: "#786957",
     fill: "#eee7db",
     fillStyle: "solid",
@@ -98,8 +109,9 @@ const baseTrackPaths = computed<PathInfo[]>(() => {
 // 2. Active progress groove paths (from left edge to thumb)
 const activeProgressPaths = computed<PathInfo[]>(() => {
   const curX = thumbX.value;
-  const fillWidth = Math.max(1, curX - PAD + 2);
-  const d = roughGen.rectangle(PAD - 2, 11, fillWidth, 10, {
+  const pad = PAD.value;
+  const fillWidth = Math.max(1, curX - pad + 2);
+  const d = roughGen.rectangle(pad - 2, 11, fillWidth, 10, {
     stroke: "#443422",
     fill: "#c9bca9",
     fillStyle: "solid",
@@ -113,13 +125,15 @@ const activeProgressPaths = computed<PathInfo[]>(() => {
 
 // 3. Ruler tick marks along the track
 const tickPaths = computed<PathInfo[]>(() => {
-  const count = props.max - props.min + 1;
+  const n = count.value;
+  const pad = PAD.value;
+  const uWidth = usableWidth.value;
   const paths: PathInfo[] = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < n; i++) {
     const val = props.min + i;
-    const fraction = count > 1 ? i / (count - 1) : 0;
-    const x = PAD + fraction * usableWidth.value;
-    const isEndpoint = i === 0 || i === count - 1;
+    const fraction = n > 1 ? i / (n - 1) : 0;
+    const x = pad + fraction * uWidth;
+    const isEndpoint = i === 0 || i === n - 1;
     const y1 = isEndpoint ? 6 : 9;
     const y2 = isEndpoint ? 26 : 23;
     const isPassed = val <= clampedVal.value;
@@ -219,10 +233,8 @@ function handlePipClick(n: number) {
 
 <template>
   <div class="rough-slider-component">
-    <!-- Slider Track Row -->
-    <div class="slider-track-row">
-      <span class="slider-endpoint">1</span>
-
+    <div class="slider-main-area">
+      <!-- Slider Track Row (the number line) -->
       <div ref="trackViewportRef" class="slider-track-viewport">
         <svg :width="trackWidth" height="32" class="slider-track-svg" aria-hidden="true">
           <!-- Base track groove -->
@@ -281,6 +293,10 @@ function handlePipClick(n: number) {
           :step="step"
           :value="clampedVal"
           class="native-range-input"
+          :style="{
+            left: `${PAD}px`,
+            width: `${usableWidth}px`,
+          }"
           :aria-label="ariaLabel"
           @input="handleNativeInput"
           @mousedown="isDragging = true"
@@ -297,44 +313,44 @@ function handlePipClick(n: number) {
         />
       </div>
 
-      <span class="slider-endpoint" :class="{ 'is-above-max': isAboveMax }">
-        {{ isAboveMax ? `${max}+` : max }}
-      </span>
+      <!-- Hand-drawn Pip Buttons Row -->
+      <div class="slider-pips-list">
+        <button
+          v-for="n in max - min + 1"
+          :key="n"
+          type="button"
+          class="rough-pip-btn"
+          :class="{
+            'is-active': isPipActive(n),
+            'is-above-max': n === max && isAboveMax,
+          }"
+          :aria-label="`${n === max && isAboveMax ? `${max}+` : n}`"
+          @click="handlePipClick(n)"
+          @mouseenter="hoveredPip = n"
+          @mouseleave="hoveredPip = null"
+        >
+          <svg
+            viewBox="0 0 36 28"
+            preserveAspectRatio="none"
+            class="pip-rough-svg"
+            aria-hidden="true"
+          >
+            <path
+              v-for="(p, i) in getPipPaths(n)"
+              :key="i"
+              :d="p.d"
+              :stroke="p.stroke"
+              :stroke-width="p.strokeWidth"
+              :fill="p.fill"
+            />
+          </svg>
+          <span class="pip-label">{{ n === max && isAboveMax ? `${max}+` : n }}</span>
+        </button>
+      </div>
     </div>
 
-    <!-- Hand-drawn Pip Buttons Row -->
-    <div class="slider-pips-row">
-      <button
-        v-for="n in max - min + 1"
-        :key="n"
-        type="button"
-        class="rough-pip-btn"
-        :class="{
-          'is-active': isPipActive(n),
-          'is-above-max': n === max && isAboveMax,
-        }"
-        :aria-label="`${n === max && isAboveMax ? `${max}+` : n}`"
-        @click="handlePipClick(n)"
-        @mouseenter="hoveredPip = n"
-        @mouseleave="hoveredPip = null"
-      >
-        <svg
-          viewBox="0 0 36 28"
-          preserveAspectRatio="none"
-          class="pip-rough-svg"
-          aria-hidden="true"
-        >
-          <path
-            v-for="(p, i) in getPipPaths(n)"
-            :key="i"
-            :d="p.d"
-            :stroke="p.stroke"
-            :stroke-width="p.strokeWidth"
-            :fill="p.fill"
-          />
-        </svg>
-        <span class="pip-label">{{ n === max && isAboveMax ? `${max}+` : n }}</span>
-      </button>
+    <div v-if="$slots.append" class="slider-pips-append">
+      <slot name="append" />
     </div>
   </div>
 </template>
@@ -342,47 +358,22 @@ function handlePipClick(n: number) {
 <style scoped>
 .rough-slider-component {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-.slider-track-row {
-  display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 10px;
   width: 100%;
 }
 
-.slider-endpoint {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: #71717a;
-  min-width: 18px;
-  text-align: center;
-  user-select: none;
-}
-
-.slider-endpoint:last-child {
-  min-width: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.slider-endpoint.is-above-max {
-  color: #b45309;
-  font-weight: 800;
-  background-color: #fef3c7;
-  border: 1px dashed #d97706;
-  padding: 1px 5px;
-  border-radius: 4px;
+.slider-main-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .slider-track-viewport {
   position: relative;
-  flex: 1;
-  min-width: 0;
+  width: 100%;
   height: 32px;
   display: flex;
   align-items: center;
@@ -413,8 +404,6 @@ function handlePipClick(n: number) {
 .native-range-input {
   position: absolute;
   top: 0;
-  left: 0;
-  width: 100%;
   height: 100%;
   opacity: 0;
   margin: 0;
@@ -424,13 +413,19 @@ function handlePipClick(n: number) {
   appearance: none;
 }
 
-.slider-pips-row {
+.slider-pips-list {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 4px;
   width: 100%;
 }
 
+.slider-pips-append {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
 .rough-pip-btn {
   position: relative;
   flex: 1;

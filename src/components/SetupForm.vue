@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, watch, onMounted, onUnmounted, shallowRef } from "vue";
 import RoughBox from "./RoughBox.vue";
+import ParallaxCityscape from "./ParallaxCityscape.vue";
 import RoughButton from "./RoughButton.vue";
 import RoughSlider from "./RoughSlider.vue";
 import {
   formatCurrency,
+  formatCompactCurrency,
   DEFAULT_LANDLORD_MONEY_PER_PLAYER,
   calculateDefaultLandlordMoney,
 } from "../utils/currency";
@@ -49,12 +51,14 @@ const defaultMoneyForProps = calculateDefaultLandlordMoney(
   props.initialBuildings ?? 4,
   props.initialPeople ?? 8,
 );
-const oldFormulaForProps = (props.initialBuildings ?? 4) * 50_000;
+const oldBuildingsOnlyFormula = (props.initialBuildings ?? 4) * 50_000;
+const old50kFormula = (props.initialBuildings ?? 4) * (props.initialPeople ?? 8) * 50_000;
 const isOldFormula =
   props.initialLandlordMoney !== undefined &&
   props.initialLandlordMoney !== null &&
-  props.initialLandlordMoney === oldFormulaForProps &&
-  oldFormulaForProps !== defaultMoneyForProps;
+  (props.initialLandlordMoney === oldBuildingsOnlyFormula ||
+    props.initialLandlordMoney === old50kFormula) &&
+  props.initialLandlordMoney !== defaultMoneyForProps;
 
 const isMoneyManuallyEdited = shallowRef(
   props.initialLandlordMoney !== undefined &&
@@ -155,6 +159,7 @@ onUnmounted(() => {
 
 <template>
   <div class="setup-container">
+    <ParallaxCityscape fixed />
     <RoughBox
       :stroke="'#27272a'"
       :fill="'#fcfaf6'"
@@ -180,7 +185,7 @@ onUnmounted(() => {
                 d="M17,11V3H7v4H3v14h8v-4h2v4h8V11H17z M7,19H5v-2h2V19z M7,15H5v-2h2V15z M7,11H5V9h2V11z M11,15H9v-2h2V15z M11,11H9V9h2 V11z M11,7H9V5h2V7z M15,15h-2v-2h2V15z M15,11h-2V9h2V11z M15,7h-2V5h2V7z M19,19h-2v-2h2V19z M19,15h-2v-2h2V15z"
               />
             </svg>
-            <span>Tenant Union Game</span>
+            <span>Game of Tenants</span>
           </div>
           <h1 class="setup-title">New Game</h1>
           <p class="setup-subtitle">Configure your neighborhood.</p>
@@ -202,20 +207,16 @@ onUnmounted(() => {
               class="input-rough-box"
             >
               <div class="control-container">
-                <div class="control-row">
-                  <div class="slider-col">
-                    <RoughSlider
-                      id="building-count-slider"
-                      v-model="buildingCount"
-                      :min="1"
-                      :max="8"
-                      :is-above-max="isBuildingAboveMax"
-                      :seed="810"
-                      aria-label="Number of buildings slider"
-                    />
-                  </div>
-
-                  <div class="textbox-col">
+                <RoughSlider
+                  id="building-count-slider"
+                  v-model="buildingCount"
+                  :min="1"
+                  :max="8"
+                  :is-above-max="isBuildingAboveMax"
+                  :seed="810"
+                  aria-label="Number of buildings slider"
+                >
+                  <template #append>
                     <RoughBox
                       :stroke="isBuildingAboveMax ? '#b45309' : '#786957'"
                       :fill="isBuildingAboveMax ? '#fffbeb' : '#faf7f2'"
@@ -242,8 +243,8 @@ onUnmounted(() => {
                         </span>
                       </div>
                     </RoughBox>
-                  </div>
-                </div>
+                  </template>
+                </RoughSlider>
               </div>
             </RoughBox>
           </div>
@@ -263,20 +264,16 @@ onUnmounted(() => {
               class="input-rough-box"
             >
               <div class="control-container">
-                <div class="control-row">
-                  <div class="slider-col">
-                    <RoughSlider
-                      id="people-count-slider"
-                      v-model="peoplePerBuilding"
-                      :min="1"
-                      :max="8"
-                      :is-above-max="isPeopleAboveMax"
-                      :seed="820"
-                      aria-label="Typical number of people per building slider"
-                    />
-                  </div>
-
-                  <div class="textbox-col">
+                <RoughSlider
+                  id="people-count-slider"
+                  v-model="peoplePerBuilding"
+                  :min="1"
+                  :max="8"
+                  :is-above-max="isPeopleAboveMax"
+                  :seed="820"
+                  aria-label="Typical number of people per building slider"
+                >
+                  <template #append>
                     <RoughBox
                       :stroke="isPeopleAboveMax ? '#b45309' : '#786957'"
                       :fill="isPeopleAboveMax ? '#fffbeb' : '#faf7f2'"
@@ -303,8 +300,8 @@ onUnmounted(() => {
                         </span>
                       </div>
                     </RoughBox>
-                  </div>
-                </div>
+                  </template>
+                </RoughSlider>
               </div>
             </RoughBox>
           </div>
@@ -319,10 +316,12 @@ onUnmounted(() => {
                 v-if="isMoneyManuallyEdited"
                 type="button"
                 class="btn-reset-default"
-                title="Reset back to $50k * number of players"
+                :title="`Reset back to ${formatCompactCurrency(DEFAULT_LANDLORD_MONEY_PER_PLAYER)} * number of players`"
                 @click="resetMoneyToDefault"
               >
-                ↺ Reset to default ($50k/player)
+                ↺ Reset to default ({{
+                  formatCompactCurrency(DEFAULT_LANDLORD_MONEY_PER_PLAYER)
+                }}/player)
               </button>
             </div>
             <RoughBox
@@ -355,7 +354,7 @@ onUnmounted(() => {
                           min="0"
                           step="10000"
                           class="stepper-number-input money-number-input"
-                          placeholder="1600000"
+                          placeholder="3200000"
                           required
                           aria-label="Landlord starting money text input"
                           @input="handleMoneyInput"
@@ -373,9 +372,9 @@ onUnmounted(() => {
                         {{
                           isMoneyManuallyEdited
                             ? "(custom amount)"
-                            : `($50k × ${totalPlayers} ${
-                                totalPlayers === 1 ? "player" : "players"
-                              })`
+                            : `(${formatCompactCurrency(
+                                DEFAULT_LANDLORD_MONEY_PER_PLAYER,
+                              )} × ${totalPlayers} ${totalPlayers === 1 ? "player" : "players"})`
                         }}
                       </span>
                     </div>
@@ -424,14 +423,19 @@ onUnmounted(() => {
 
 <style scoped>
 .setup-container {
-  min-height: calc(100vh - 60px);
+  position: relative;
+  min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .setup-card-rough {
+  position: relative;
+  z-index: 10;
   width: 100%;
   max-width: 520px;
 }
@@ -519,22 +523,22 @@ onUnmounted(() => {
 }
 
 .number-rough-box {
-  min-width: 108px;
+  min-width: 98px;
 }
 
 .number-box-inner {
   display: flex;
   align-items: center;
-  padding: 5px 10px;
-  gap: 6px;
+  padding: 2.5px 8px;
+  gap: 5px;
 }
 
 .stepper-number-input {
-  width: 44px;
+  width: 38px;
   border: none;
   background: transparent;
   outline: none;
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   font-weight: 800;
   color: #18181b;
   text-align: center;
@@ -549,7 +553,7 @@ onUnmounted(() => {
 }
 
 .stepper-unit-label {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: #71717a;
   white-space: nowrap;

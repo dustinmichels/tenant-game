@@ -195,11 +195,11 @@ const VARIANT_SPECS: Record<number, ShapeSpec[]> = {
     },
   ],
   3: [
-    // Head & hair
+    // Head with bob / shoulder-length hair
     { type: "circle", args: [18, 11, 15], fill: "#52525b", stroke: "#27272a", roughness: 0.8 },
     {
       type: "path",
-      args: ["M11 9 C11 5, 25 4, 25 8 C23 7, 13 7, 11 9 Z"],
+      args: ["M10 16 C9 9, 11 4, 18 4 C25 4, 27 9, 26 16 C25 15, 23 9, 18 8 C13 9, 11 15, 10 16 Z"],
       fill: "#3f3f46",
       stroke: "#18181b",
       roughness: 0.7,
@@ -215,29 +215,20 @@ const VARIANT_SPECS: Record<number, ShapeSpec[]> = {
       stroke: "#27272a",
       roughness: 0.9,
     },
-    // Arms holding clipboard
+    // Hands in pockets (casual relaxed stance with flared elbows)
     {
       type: "path",
-      args: ["M9 22 L14 30 L18 30 L11 23 Z"],
+      args: ["M10 22 C6 27, 5 33, 6 36 C7 38, 10 39, 11 36 C10 33, 10 28, 11 24 Z"],
       fill: "#52525b",
       stroke: "#27272a",
       roughness: 0.8,
     },
     {
       type: "path",
-      args: ["M26 22 L20 30 L17 30 L24 23 Z"],
+      args: ["M26 22 C30 27, 31 33, 30 36 C29 38, 26 39, 25 36 C26 33, 26 28, 25 24 Z"],
       fill: "#52525b",
       stroke: "#27272a",
       roughness: 0.8,
-    },
-    // Clipboard / organizer flyer
-    {
-      type: "rect",
-      args: [14, 25, 8, 11],
-      fill: "#fde047",
-      stroke: "#3f3f46",
-      roughness: 0.7,
-      strokeWidth: 1,
     },
     // Legs
     {

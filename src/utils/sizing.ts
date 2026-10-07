@@ -1,9 +1,10 @@
 import type { DynamicSizingResult } from "../types/game";
+import { getBuildingGridDimensions } from "./positions";
 
 /**
  * Baseline person width for 32 players (default game).
  */
-export const BASELINE_PERSON_WIDTH = 50;
+export const BASELINE_PERSON_WIDTH = 75;
 
 /**
  * Calculates optimal grid columns for a building with `tenantCount` tenants.
@@ -38,72 +39,56 @@ export function calculateOptimalPersonSize(
 
   // Layout arrangement on canvas:
   // How many building columns and rows share the screen?
-  const bColsOnCanvas =
-    bCount === 1
-      ? 1
-      : bCount === 2
-        ? 2
-        : bCount <= 4
-          ? 2
-          : bCount <= 8
-            ? 3
-            : bCount <= 11
-              ? 4
-              : Math.min(5, Math.ceil(bCount / 3));
-
-  const bRowsOnCanvas =
-    bCount <= 2 ? 1 : bCount <= 6 ? 2 : bCount <= 11 ? 3 : Math.max(3, Math.ceil(bCount / 4));
+  const { cols: bColsOnCanvas, rows: bRowsOnCanvas } = getBuildingGridDimensions(bCount);
 
   // Within each building: tenant window columns and rows
   const tCols = getTenantGridCols(pCount);
   const tRows = Math.ceil(pCount / tCols);
 
-  // Usable canvas space budget (leaving breathing room for margins, landlord office, threads)
-  const usableWidth = canvasWidth * 0.76;
-  const usableHeight = canvasHeight * 0.72;
+  // Usable canvas space budget
+  const usableWidth = canvasWidth * 0.86;
+  const usableHeight = canvasHeight * 0.86;
 
   // Max person width allowed by horizontal canvas space
-  // Building width = tCols * w + (tCols - 1) * gap (3px) + padding/border (24px)
   const widthPerBuilding = usableWidth / bColsOnCanvas;
-  const maxWidthFromCanvas = Math.max(18, (widthPerBuilding - 24 - (tCols - 1) * 3) / tCols);
+  const maxWidthFromCanvas = Math.max(22, (widthPerBuilding - 20 - (tCols - 1) * 3) / tCols);
 
   // Max person width allowed by vertical canvas space
-  // Building height = tRows * (w / 0.68) + (tRows - 1) * gap (3px) + roof/header/door (80px)
   const heightPerBuilding = usableHeight / bRowsOnCanvas;
   const maxHeightFromCanvas = Math.max(
-    18,
-    (heightPerBuilding - 80 - (tRows - 1) * 3) / (tRows * (1 / 0.68)),
+    22,
+    (heightPerBuilding - 54 - (tRows - 1) * 3) / (tRows * (1 / 0.68)),
   );
 
   // Target width from total player count:
-  // Smooth curve: 70px at 4 players down to 22px at 128+ players
+  // Defaults to 75px at 32 players
   let targetWidth: number;
   if (totalPlayers <= 4) {
-    targetWidth = 70;
+    targetWidth = 96;
   } else if (totalPlayers <= 8) {
-    targetWidth = Math.round(70 - ((totalPlayers - 4) / 4) * 8);
+    targetWidth = Math.round(96 - ((totalPlayers - 4) / 4) * 8);
   } else if (totalPlayers <= 16) {
-    targetWidth = Math.round(62 - ((totalPlayers - 8) / 8) * 6);
+    targetWidth = Math.round(88 - ((totalPlayers - 8) / 8) * 6);
   } else if (totalPlayers <= 32) {
-    targetWidth = Math.round(56 - ((totalPlayers - 16) / 16) * 6);
+    targetWidth = Math.round(82 - ((totalPlayers - 16) / 16) * 7);
   } else if (totalPlayers <= 48) {
-    targetWidth = Math.round(50 - ((totalPlayers - 32) / 16) * 8);
+    targetWidth = Math.round(75 - ((totalPlayers - 32) / 16) * 11);
   } else if (totalPlayers <= 64) {
-    targetWidth = Math.round(42 - ((totalPlayers - 48) / 16) * 6);
+    targetWidth = Math.round(64 - ((totalPlayers - 48) / 16) * 10);
   } else if (totalPlayers <= 96) {
-    targetWidth = Math.round(36 - ((totalPlayers - 64) / 32) * 8);
+    targetWidth = Math.round(54 - ((totalPlayers - 64) / 32) * 10);
   } else if (totalPlayers <= 128) {
-    targetWidth = Math.round(28 - ((totalPlayers - 96) / 32) * 4);
+    targetWidth = Math.round(44 - ((totalPlayers - 96) / 32) * 8);
   } else {
-    targetWidth = Math.round(24 - Math.min(2, ((totalPlayers - 128) / 64) * 2));
+    targetWidth = Math.round(36 - Math.min(6, ((totalPlayers - 128) / 64) * 6));
   }
 
   // Combine target with canvas spatial fit constraint
   const spaceConstraint = Math.min(maxWidthFromCanvas, maxHeightFromCanvas);
   const rawWidth = Math.min(targetWidth, spaceConstraint);
 
-  // Clamp within ergonomic bounds (minimum 22px so characters are discernible, max 70px)
-  const personWidth = Math.max(22, Math.min(70, Math.round(rawWidth)));
+  // Clamp within ergonomic bounds (minimum 26px, max 100px)
+  const personWidth = Math.max(26, Math.min(100, Math.round(rawWidth)));
   const personHeight = Math.round(personWidth / 0.68);
   const personScale = Math.round((personWidth / BASELINE_PERSON_WIDTH) * 100) / 100;
 

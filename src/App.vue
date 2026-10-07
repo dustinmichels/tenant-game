@@ -25,7 +25,6 @@ const {
   personScale,
   landlordStartingMoney,
   landlordMoney,
-  canUndoLandlordSpend,
   events,
 } = storeToRefs(gameStore);
 
@@ -63,6 +62,7 @@ function handleSubmitSetup(payload: {
       :landlord-money="landlordMoney"
       @next-phase="gameStore.nextPhase"
       @prev-phase="gameStore.prevPhase"
+      @select-phase="gameStore.setPhase"
       @spend-landlord-money="gameStore.spendLandlordMoney"
       @earn-landlord-money="gameStore.earnLandlordMoney"
       @new-game="handleNewGameClick"
@@ -89,13 +89,10 @@ function handleSubmitSetup(payload: {
           :landlord-starting-money="landlordStartingMoney"
           :coalition-count="coalitions.length"
           :coalitions="coalitions"
-          :building-color-map="buildingColorMap"
           :events="events"
-          :can-undo-spend="canUndoLandlordSpend"
           @add-event="gameStore.addEvent"
           @remove-event="gameStore.removeEvent"
           @spend-landlord-money="gameStore.spendLandlordMoney"
-          @undo-landlord-spend="gameStore.undoLandlordSpend"
         />
       </aside>
 

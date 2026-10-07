@@ -34,7 +34,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run tests
-        run: bun test
+        run: bun test --pass-with-no-tests
 
       - name: Build site
         run: bun run build

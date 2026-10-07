@@ -1,7 +1,7 @@
 import { storeToRefs } from "pinia";
-import { getGameStore, formatSpendEventText } from "../stores/game";
+import { getGameStore, formatSpendEventText, formatEarnEventText } from "../stores/game";
 
-export { formatSpendEventText };
+export { formatSpendEventText, formatEarnEventText };
 
 /**
  * Backward compatibility wrapper around the Pinia game store.
@@ -27,6 +27,7 @@ export function useGameStorage() {
     phase: refs.phase,
     currentPhaseInfo: refs.currentPhaseInfo,
     unionTenantsCount: refs.unionTenantsCount,
+    coalitionTenantsCount: refs.coalitionTenantsCount,
     totalEvictionsCount: refs.totalEvictionsCount,
     organizedBuildingsCount: refs.organizedBuildingsCount,
     tallies: refs.tallies,

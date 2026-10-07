@@ -87,6 +87,45 @@ export function getTotalUnionCount(
 }
 
 /**
+ * Returns the number of tenants who are in a union AND whose building is in a coalition.
+ *
+ * Rule:
+ * If people are in the union for buildings that are in a coalition, they count towards both
+ * the union count and the coalition count.
+ * If someone is in a union but their building is not in a coalition with any others,
+ * they only count towards the union count.
+ */
+export function getCoalitionUnionCount(
+  buildings: Building[],
+  coalitions?: CoalitionGroup[] | CoalitionConnection[],
+): number {
+  if (!buildings || buildings.length === 0) return 0;
+
+  const groups: CoalitionGroup[] =
+    Array.isArray(coalitions) && coalitions.length > 0
+      ? "buildingIds" in (coalitions[0] ?? {})
+        ? (coalitions as CoalitionGroup[])
+        : computeCoalitionGroups(buildings, coalitions as CoalitionConnection[])
+      : [];
+
+  if (groups.length === 0) return 0;
+
+  const coalitionBuildingIds = new Set<string>();
+  for (const g of groups) {
+    if (Array.isArray(g.buildingIds)) {
+      for (const id of g.buildingIds) {
+        coalitionBuildingIds.add(id);
+      }
+    }
+  }
+
+  return buildings.reduce((sum, b) => {
+    if (!coalitionBuildingIds.has(b.id)) return sum;
+    return sum + getBuildingUnionCount(b, groups, buildings);
+  }, 0);
+}
+
+/**
  * Computes the connected coalition groups from buildings and active connections.
  * For each coalition, the dominant color is chosen based on whichever color has more unionized people.
  */

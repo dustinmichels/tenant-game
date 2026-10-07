@@ -17,6 +17,7 @@ const emit = defineEmits<{
   (e: "new-game"): void;
   (e: "next-phase"): void;
   (e: "prev-phase"): void;
+  (e: "select-phase", phase: GamePhase): void;
   (e: "spend-landlord-money", amount?: number): void;
   (e: "earn-landlord-money", amount?: number): void;
 }>();
@@ -77,7 +78,7 @@ const dividerPaths = computed<PathInfo[]>(() => {
             />
           </svg>
         </div>
-        <span class="game-name">Tenant Union</span>
+        <span class="game-name">Game of Tenants</span>
       </div>
 
       <!-- Center: Round & Phase Tracker with Font Arrows -->
@@ -87,6 +88,7 @@ const dividerPaths = computed<PathInfo[]>(() => {
           :phase="phase"
           @next="emit('next-phase')"
           @prev="emit('prev-phase')"
+          @select-phase="(p) => emit('select-phase', p)"
         />
       </div>
       <!-- Right Controls: Fullscreen and New Game -->
@@ -165,9 +167,9 @@ const dividerPaths = computed<PathInfo[]>(() => {
   margin: 0 auto;
   padding: 8px 24px;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
 }
 
 .brand-section {
@@ -175,6 +177,7 @@ const dividerPaths = computed<PathInfo[]>(() => {
   align-items: center;
   gap: 8px;
   justify-self: start;
+  flex-shrink: 0;
 }
 
 .union-icon {
@@ -198,8 +201,11 @@ const dividerPaths = computed<PathInfo[]>(() => {
 .round-tracker-center {
   display: flex;
   align-items: center;
-  justify-content: center;
-  justify-self: center;
+  justify-content: flex-start;
+  justify-self: stretch;
+  min-width: 0;
+  width: 100%;
+  max-width: 800px;
 }
 
 .right-controls {
@@ -207,6 +213,7 @@ const dividerPaths = computed<PathInfo[]>(() => {
   align-items: center;
   gap: 14px;
   justify-self: end;
+  flex-shrink: 0;
 }
 
 .actions-section {
@@ -228,21 +235,28 @@ const dividerPaths = computed<PathInfo[]>(() => {
   display: block;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1060px) {
   .facilitator-bar-inner {
+    display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 12px;
+    gap: 10px;
+  }
+
+  .brand-section {
+    justify-content: center;
   }
 
   .round-tracker-center {
     order: 2;
     justify-content: center;
+    max-width: 100%;
   }
 
   .right-controls {
     order: 3;
     justify-content: center;
+    flex-wrap: wrap;
   }
 }
 

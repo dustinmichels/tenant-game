@@ -1,9 +1,10 @@
-export const DEFAULT_LANDLORD_MONEY_PER_PLAYER = 50_000;
+export const DEFAULT_LANDLORD_MONEY_PER_PLAYER = 100_000;
+export const DEFAULT_LANDLORD_MONEY_PER_TENANT = DEFAULT_LANDLORD_MONEY_PER_PLAYER;
 
 /**
- * Calculates default landlord starting money based on total players
+ * Calculates default landlord starting money based on total players/tenants
  * (# of players = buildingCount * peoplePerBuilding).
- * e.g., 6 buildings x 6 people = 36 players -> $1,800,000
+ * e.g., 6 buildings x 6 people = 36 players -> $3,600,000
  */
 export function calculateDefaultLandlordMoney(
   buildingCount: number | null | undefined,

@@ -138,7 +138,7 @@ function handleToggleEviction(evicted: boolean) {
             </div>
 
             <!-- Status Indicator -->
-            <div class="status-indicator">
+            <div v-if="isEvicted || isInstigator || inUnion" class="status-indicator">
               <span v-if="isEvicted" class="status-badge evicted"> 🚫 Evicted </span>
               <span
                 v-if="isInstigator"
@@ -154,7 +154,6 @@ function handleToggleEviction(evicted: boolean) {
               >
                 ✊ Union Member
               </span>
-              <span v-else class="status-badge unaffiliated"> 👤 Resident </span>
             </div>
             <!-- Actions List -->
             <div class="actions-list">
@@ -322,10 +321,6 @@ function handleToggleEviction(evicted: boolean) {
   border-color: #f87171;
 }
 
-.status-badge.unaffiliated {
-  color: #57534e;
-  background-color: #f5f5f4;
-}
 .actions-list {
   display: flex;
   flex-direction: column;

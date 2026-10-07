@@ -9,6 +9,7 @@ import type {
   CoalitionConnection,
   CoalitionGroup,
   GameEvent,
+  GameEventType,
 } from "../types/game";
 import {
   PHASES,
@@ -16,11 +17,18 @@ import {
   getBuildingColor,
   isBuildingOrganized,
   getBuildingUnionCount,
+  getTotalUnionCount,
+  getCoalitionUnionCount,
+  generateDefaultPositions,
   generateScatteredPositions,
   computeCoalitionGroups,
   getEffectiveBuildingColorMap,
   calculateOptimalPersonSize,
   BASELINE_PERSON_WIDTH,
+  isSpendEvent,
+  isSpendEventText,
+  isEarnEvent,
+  isEarnEventText,
 } from "../types/game";
 import { generateDivergentPalette } from "../utils/colorTheory";
 import { calculateDefaultLandlordMoney } from "../utils/currency";
@@ -63,7 +71,7 @@ function createDefaultState(): GameState {
 
 function generateBuildings(buildingCount: number, peoplePerBuilding: number): Building[] {
   const result: Building[] = [];
-  const positions = generateScatteredPositions(buildingCount);
+  const positions = generateDefaultPositions(buildingCount);
   const divergentColors = generateDivergentPalette(buildingCount);
 
   for (let i = 1; i <= buildingCount; i++) {
@@ -101,7 +109,7 @@ function generateBuildings(buildingCount: number, peoplePerBuilding: number): Bu
 function sanitizeLoadedState(parsed: Partial<GameState>): GameState {
   const rawBuildings = Array.isArray(parsed.buildings) ? parsed.buildings : [];
   const rawBuildingCount = Number(parsed.buildingCount) || Math.max(1, rawBuildings.length);
-  const fallbackPositions = generateScatteredPositions(rawBuildings.length);
+  const fallbackPositions = generateDefaultPositions(rawBuildings.length);
   const fallbackColors = generateDivergentPalette(rawBuildingCount);
   const isLegacyStaticPalette =
     rawBuildings.length > 0 &&
@@ -169,7 +177,7 @@ function sanitizeLoadedState(parsed: Partial<GameState>): GameState {
     (buildings[0]?.tenants.length ? buildings[0].tenants.length : 8);
 
   const defaultSizing = calculateOptimalPersonSize(rawBuildingCount, rawPeopleCount);
-  const isLegacyDefaultWidth = parsed.personWidth === 42 || parsed.personWidth === 50;
+  const isLegacyDefaultWidth = typeof parsed.personWidth !== "number" || parsed.personWidth < 70;
   const personWidth =
     typeof parsed.personWidth === "number" && parsed.personWidth > 0 && !isLegacyDefaultWidth
       ? parsed.personWidth
@@ -183,12 +191,14 @@ function sanitizeLoadedState(parsed: Partial<GameState>): GameState {
       ? parsed.personScale
       : defaultSizing.personScale;
   const isConfigured = Boolean(parsed.isConfigured);
-  const oldFormulaDefault = rawBuildingCount * 50_000;
+  const oldBuildingsOnlyDefault = rawBuildingCount * 50_000;
+  const old50kPerPlayerDefault = rawBuildingCount * rawPeopleCount * 50_000;
   const newFormulaDefault = calculateDefaultLandlordMoney(rawBuildingCount, rawPeopleCount);
   const isOldDefault =
     typeof parsed.landlordStartingMoney === "number" &&
-    parsed.landlordStartingMoney === oldFormulaDefault &&
-    oldFormulaDefault !== newFormulaDefault;
+    (parsed.landlordStartingMoney === oldBuildingsOnlyDefault ||
+      parsed.landlordStartingMoney === old50kPerPlayerDefault) &&
+    parsed.landlordStartingMoney !== newFormulaDefault;
 
   const landlordStartingMoney =
     !isConfigured ||
@@ -285,13 +295,24 @@ function sanitizeLoadedState(parsed: Partial<GameState>): GameState {
         id: `event-${Date.now()}-${idx}`,
         text: e,
         timestamp: Date.now(),
+        type: isSpendEventText(e) ? "spend" : isEarnEventText(e) ? "earn" : "general",
       });
     } else if (e && typeof e === "object" && "text" in e && typeof e.text === "string") {
+      const text = e.text;
+      const type: GameEventType =
+        "type" in e && (e.type === "spend" || e.type === "earn" || e.type === "general")
+          ? (e.type as GameEventType)
+          : isSpendEventText(text)
+            ? "spend"
+            : isEarnEventText(text)
+              ? "earn"
+              : "general";
       events.push({
         id: "id" in e && typeof e.id === "string" && e.id ? e.id : `event-${Date.now()}-${idx}`,
-        text: e.text,
+        text,
         round: "round" in e && typeof e.round === "number" ? e.round : undefined,
         timestamp: "timestamp" in e && typeof e.timestamp === "number" ? e.timestamp : Date.now(),
+        type,
       });
     }
   }
@@ -337,6 +358,16 @@ export function formatSpendEventText(amount: number): string {
     return `landlord spends ${amount / 1_000}k`;
   }
   return `landlord spends $${amount.toLocaleString()}`;
+}
+
+export function formatEarnEventText(amount: number): string {
+  if (amount >= 1_000_000 && amount % 1_000_000 === 0) {
+    return `landlord earns ${amount / 1_000_000}m`;
+  }
+  if (amount >= 1_000 && amount % 1_000 === 0) {
+    return `landlord earns ${amount / 1_000}k`;
+  }
+  return `landlord earns $${amount.toLocaleString()}`;
 }
 
 export const useGameStore = defineStore("game", () => {
@@ -392,6 +423,9 @@ export const useGameStore = defineStore("game", () => {
   // Counting unions rule: at least 2 people needed to count as a union (standalone or via coalition)
   const unionTenantsCount = computed(() =>
     buildings.value.reduce((sum, b) => sum + getBuildingUnionCount(b, coalitions.value), 0),
+  );
+  const coalitionTenantsCount = computed(() =>
+    getCoalitionUnionCount(buildings.value, coalitions.value),
   );
   const totalEvictionsCount = computed(() =>
     buildings.value.reduce((sum, b) => sum + b.tenants.filter((t) => t.isEvicted).length, 0),
@@ -537,7 +571,7 @@ export const useGameStore = defineStore("game", () => {
         tallies.value[currentRound].landlordRemaining = newFunds;
       }
     }
-    addEvent(formatSpendEventText(amount));
+    addEvent(formatSpendEventText(amount), "spend");
 
     updatedAt.value = Date.now();
     persist();
@@ -567,7 +601,7 @@ export const useGameStore = defineStore("game", () => {
     if (Array.isArray(events.value) && events.value.length > 0) {
       for (let i = events.value.length - 1; i >= 0; i--) {
         const ev = events.value[i];
-        if (ev && ev.text.toLowerCase().startsWith("landlord spends")) {
+        if (ev && (isSpendEvent(ev) || ev.text.toLowerCase().startsWith("landlord spends"))) {
           events.value.splice(i, 1);
           break;
         }
@@ -598,21 +632,25 @@ export const useGameStore = defineStore("game", () => {
       }
     }
 
+    addEvent(formatEarnEventText(amount), "earn");
     updatedAt.value = Date.now();
     persist();
   }
 
-  function addEvent(text: string) {
+  function addEvent(text: string, type?: GameEventType) {
     const trimmed = text.trim();
     if (!trimmed) return;
     if (!Array.isArray(events.value)) {
       events.value = [];
     }
+    const resolvedType: GameEventType =
+      type ?? (isSpendEventText(trimmed) ? "spend" : isEarnEventText(trimmed) ? "earn" : "general");
     const newEvent: GameEvent = {
       id: `event-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       text: trimmed,
       round: round.value,
       timestamp: Date.now(),
+      type: resolvedType,
     };
     events.value.push(newEvent);
     updatedAt.value = Date.now();
@@ -692,17 +730,32 @@ export const useGameStore = defineStore("game", () => {
     persist();
   }
 
+  function setPhase(newPhase: GamePhase) {
+    if (newPhase === phase.value) return;
+    phase.value = newPhase;
+    updatedAt.value = Date.now();
+    persist();
+  }
+
   function toggleUnion(buildingId: string, tenantId: string, join?: boolean) {
     const building = buildings.value.find((b) => b.id === buildingId);
     if (!building) return;
     const tenant = building.tenants.find((t) => t.id === tenantId);
     if (!tenant) return;
 
+    const wasInUnion = Boolean(tenant.inUnion || tenant.isInstigator);
+
     if (tenant.isInstigator) {
       tenant.inUnion = true;
     } else {
       tenant.inUnion = join !== undefined ? join : !tenant.inUnion;
     }
+
+    const isNowInUnion = Boolean(tenant.inUnion || tenant.isInstigator);
+    if (!wasInUnion && isNowInUnion) {
+      addEvent(`Resident in ${building.label} joined tenant union`, "general");
+    }
+
     syncCurrentRoundTally();
     updatedAt.value = Date.now();
     persist();
@@ -874,9 +927,9 @@ export const useGameStore = defineStore("game", () => {
   function connectCoalition(sourceId: string, targetId: string): boolean {
     if (!sourceId || !targetId || sourceId === targetId) return false;
     const bldgs = buildings.value;
-    const hasSource = bldgs.some((b) => b.id === sourceId);
-    const hasTarget = bldgs.some((b) => b.id === targetId);
-    if (!hasSource || !hasTarget) return false;
+    const sourceBuilding = bldgs.find((b) => b.id === sourceId);
+    const targetBuilding = bldgs.find((b) => b.id === targetId);
+    if (!sourceBuilding || !targetBuilding) return false;
 
     if (!Array.isArray(coalitionConnections.value)) {
       coalitionConnections.value = [];
@@ -895,6 +948,7 @@ export const useGameStore = defineStore("game", () => {
       targetId,
       createdAt: Date.now(),
     });
+    addEvent(`Coalition formed: ${sourceBuilding.label} + ${targetBuilding.label}`, "general");
     syncCurrentRoundTally();
     updatedAt.value = Date.now();
     persist();
@@ -946,7 +1000,16 @@ export const useGameStore = defineStore("game", () => {
     if (!Array.isArray(coalitionConnections.value) || coalitionConnections.value.length === 0) {
       return false;
     }
-    coalitionConnections.value.pop();
+    const popped = coalitionConnections.value.pop();
+    if (popped && Array.isArray(events.value) && events.value.length > 0) {
+      for (let i = events.value.length - 1; i >= 0; i--) {
+        const ev = events.value[i];
+        if (ev && ev.text.toLowerCase().startsWith("coalition formed:")) {
+          events.value.splice(i, 1);
+          break;
+        }
+      }
+    }
     syncCurrentRoundTally();
     updatedAt.value = Date.now();
     persist();
@@ -984,6 +1047,7 @@ export const useGameStore = defineStore("game", () => {
     coalitions,
     buildingColorMap,
     canUndoCoalition,
+    coalitionTenantsCount,
 
     // Actions
     persist,
@@ -1000,6 +1064,7 @@ export const useGameStore = defineStore("game", () => {
     resetGame,
     nextPhase,
     prevPhase,
+    setPhase,
     toggleUnion,
     toggleEviction,
     updateBuildingPosition,

@@ -12,6 +12,8 @@ import {
   checkBuildingOverlap,
   clampBuildingPosition,
   resolveBuildingCollisions,
+  findSwapTargetBuilding,
+  swapBuildingPositions,
   calculateOptimalPersonSize,
   BASELINE_PERSON_WIDTH,
   isBuildingOrganized,
@@ -102,6 +104,7 @@ const isDragging = ref(false);
 const activeDragBuildingId = ref<string | null>(null);
 const hoveredCollisionBuildingId = ref<string | null>(null);
 const repulsedBuildingIds = ref<Set<string>>(new Set());
+const swappedBuildingIds = ref<Set<string>>(new Set());
 
 function getBuildingDimensionsMap(): Record<string, BuildingDimensions> {
   const map: Record<string, BuildingDimensions> = {};
@@ -117,6 +120,25 @@ function getBuildingDimensionsMap(): Record<string, BuildingDimensions> {
       map[building.id] = {
         w: (rect.width / canvasRect.width) * 100,
         h: (rect.height / canvasRect.height) * 100,
+      };
+    }
+  }
+  return map;
+}
+
+function getElementRectsMap(): Record<
+  string,
+  { left: number; top: number; right: number; bottom: number }
+> {
+  const map: Record<string, { left: number; top: number; right: number; bottom: number }> = {};
+  for (const [id, el] of buildingCardEls.entries()) {
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      map[id] = {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
       };
     }
   }
@@ -148,64 +170,116 @@ function handlePointerDownDrag(e: PointerEvent, building: Building) {
     const deltaYPercent = (deltaY / canvasRect.height) * 100;
 
     // Clamp coordinates within the canvas
-    const newX = Math.round(Math.max(1, Math.min(84, startBuildingX + deltaXPercent)) * 10) / 10;
-    const newY = Math.round(Math.max(1, Math.min(82, startBuildingY + deltaYPercent)) * 10) / 10;
+    const newX = Math.round(Math.max(1, Math.min(74, startBuildingX + deltaXPercent)) * 10) / 10;
+    const newY = Math.round(Math.max(1, Math.min(70, startBuildingY + deltaYPercent)) * 10) / 10;
     emit("update-building-position", building.id, newX, newY);
 
-    // Detect if hovering over another building to show visual feedback
+    // Detect if hovering over another building to show visual feedback for switching places
     const dimMap = getBuildingDimensionsMap();
-    const placedDim = dimMap[building.id] ?? DEFAULT_BUILDING_DIMENSIONS;
-    let overlappedId: string | null = null;
-    for (const other of props.buildings) {
-      if (other.id === building.id) continue;
-      const otherDim = dimMap[other.id] ?? DEFAULT_BUILDING_DIMENSIONS;
-      if (
-        checkBuildingOverlap({ x: newX, y: newY }, { x: other.x, y: other.y }, placedDim, otherDim)
-      ) {
-        overlappedId = other.id;
-        break;
-      }
-    }
-    hoveredCollisionBuildingId.value = overlappedId;
+    const swapTarget = findSwapTargetBuilding(
+      building.id,
+      { x: newX, y: newY },
+      props.buildings,
+      dimMap,
+      {
+        pointerClient: { x: moveEvent.clientX, y: moveEvent.clientY },
+        elementRects: getElementRectsMap(),
+      },
+    );
+    hoveredCollisionBuildingId.value = swapTarget ? swapTarget.id : null;
 
     nextTick(updatePinPositions);
   }
 
-  function onPointerUp() {
+  function onPointerUp(upEvent: PointerEvent) {
     isDragging.value = false;
+    const targetBuildingId = hoveredCollisionBuildingId.value;
     hoveredCollisionBuildingId.value = null;
     const placedId = activeDragBuildingId.value;
     activeDragBuildingId.value = null;
     window.removeEventListener("pointermove", onPointerMove);
     window.removeEventListener("pointerup", onPointerUp);
 
-    if (placedId) {
-      const dimMap = getBuildingDimensionsMap();
-      const placedBuilding = props.buildings.find((b) => b.id === placedId);
-      if (placedBuilding) {
-        const clamped = clampBuildingPosition({ x: placedBuilding.x, y: placedBuilding.y });
-        if (clamped.x !== placedBuilding.x || clamped.y !== placedBuilding.y) {
-          emit("update-building-position", placedId, clamped.x, clamped.y);
+    if (!placedId) return;
+
+    const totalDragDist = Math.hypot(
+      upEvent.clientX - startPointerX,
+      upEvent.clientY - startPointerY,
+    );
+
+    // If dropped directly on top of another building (moved > 6px), switch places!
+    let targetBuilding: Building | null = null;
+    if (totalDragDist > 6) {
+      if (targetBuildingId) {
+        targetBuilding = props.buildings.find((b) => b.id === targetBuildingId) ?? null;
+      }
+      if (!targetBuilding) {
+        const dimMap = getBuildingDimensionsMap();
+        const placedBuilding = props.buildings.find((b) => b.id === placedId);
+        if (placedBuilding) {
+          targetBuilding = findSwapTargetBuilding(
+            placedId,
+            { x: placedBuilding.x, y: placedBuilding.y },
+            props.buildings,
+            dimMap,
+            {
+              pointerClient: { x: upEvent.clientX, y: upEvent.clientY },
+              elementRects: getElementRectsMap(),
+            },
+          );
         }
       }
+    }
 
-      // Repulse any buildings that are overlapped by the placed building
-      const repulsedUpdates = resolveBuildingCollisions(placedId, props.buildings, dimMap);
-      if (repulsedUpdates.length > 0) {
+    if (targetBuilding && targetBuilding.id !== placedId) {
+      // Make them switch places
+      const updates = swapBuildingPositions(
+        placedId,
+        { x: startBuildingX, y: startBuildingY },
+        targetBuilding.id,
+        { x: targetBuilding.x, y: targetBuilding.y },
+      );
+
+      swappedBuildingIds.value.add(placedId);
+      swappedBuildingIds.value.add(targetBuilding.id);
+      setTimeout(() => {
+        swappedBuildingIds.value.delete(placedId);
+        swappedBuildingIds.value.delete(targetBuilding.id);
+      }, 600);
+
+      emit("update-building-positions", updates);
+      animatePinPositionsDuringTransition(450);
+      return;
+    }
+
+    // Placed in empty space: clamp and resolve glancing overlaps
+    const placedBuilding = props.buildings.find((b) => b.id === placedId);
+    if (placedBuilding) {
+      const clamped = clampBuildingPosition({ x: placedBuilding.x, y: placedBuilding.y });
+      if (clamped.x !== placedBuilding.x || clamped.y !== placedBuilding.y) {
+        emit("update-building-position", placedId, clamped.x, clamped.y);
+      }
+    }
+
+    // Repulse any buildings that are slightly overlapped by the placed building in open space
+    const dimMap = getBuildingDimensionsMap();
+    const repulsedUpdates = resolveBuildingCollisions(placedId, props.buildings, dimMap);
+    if (repulsedUpdates.length > 0) {
+      for (const u of repulsedUpdates) {
+        repulsedBuildingIds.value.add(u.id);
+      }
+      setTimeout(() => {
         for (const u of repulsedUpdates) {
-          repulsedBuildingIds.value.add(u.id);
+          repulsedBuildingIds.value.delete(u.id);
         }
-        setTimeout(() => {
-          for (const u of repulsedUpdates) {
-            repulsedBuildingIds.value.delete(u.id);
-          }
-        }, 500);
+      }, 500);
 
-        emit("update-building-positions", repulsedUpdates);
-        nextTick(updatePinPositions);
-        setTimeout(updatePinPositions, 200);
-        setTimeout(updatePinPositions, 450);
-      }
+      emit("update-building-positions", repulsedUpdates);
+      animatePinPositionsDuringTransition(450);
+    } else {
+      nextTick(updatePinPositions);
+      setTimeout(updatePinPositions, 200);
+      setTimeout(updatePinPositions, 450);
     }
   }
   window.addEventListener("pointermove", onPointerMove);
@@ -356,6 +430,22 @@ function updatePinPositions() {
   pinPositions.value = nextPositions;
   buildingRects.value = nextRects;
 }
+let transitionAnimFrameId: number | null = null;
+function animatePinPositionsDuringTransition(duration = 450) {
+  if (transitionAnimFrameId !== null) {
+    cancelAnimationFrame(transitionAnimFrameId);
+  }
+  const start = performance.now();
+  function frame(now: number) {
+    updatePinPositions();
+    if (now - start < duration) {
+      transitionAnimFrameId = requestAnimationFrame(frame);
+    } else {
+      transitionAnimFrameId = null;
+    }
+  }
+  transitionAnimFrameId = requestAnimationFrame(frame);
+}
 
 let resizeObserver: ResizeObserver | null = null;
 
@@ -372,6 +462,9 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (transitionAnimFrameId !== null) {
+    cancelAnimationFrame(transitionAnimFrameId);
+  }
   resizeObserver?.disconnect();
   window.removeEventListener("resize", updatePinPositions);
   window.removeEventListener("keydown", handleGlobalKeydown);
@@ -379,13 +472,10 @@ onUnmounted(() => {
   window.removeEventListener("pointerup", onThreadPointerUp);
   if (toastTimer) clearTimeout(toastTimer);
 });
-
 watch(
   () => props.buildings.map((b) => `${b.id}:${b.x}:${b.y}`),
   () => {
-    nextTick(updatePinPositions);
-    setTimeout(updatePinPositions, 200);
-    setTimeout(updatePinPositions, 450);
+    animatePinPositionsDuringTransition(450);
   },
   { deep: true },
 );
@@ -903,6 +993,7 @@ function getBuildingCoalitionNames(buildingId: string): string {
       :class="{
         'is-active-drag': activeDragBuildingId === building.id,
         'is-being-placed-upon': hoveredCollisionBuildingId === building.id,
+        'is-swapped': swappedBuildingIds.has(building.id),
         'is-repulsed': repulsedBuildingIds.has(building.id),
       }"
       :style="{
@@ -911,6 +1002,17 @@ function getBuildingCoalitionNames(buildingId: string): string {
       }"
       @click="handleBuildingSlotClick(building)"
     >
+      <!-- Switch places indicator pill -->
+      <transition name="fade-pop">
+        <div
+          v-if="hoveredCollisionBuildingId === building.id"
+          class="switch-places-badge"
+          aria-hidden="true"
+        >
+          <span class="switch-icon">⇄</span>
+          <span class="switch-text">Switch places</span>
+        </div>
+      </transition>
       <BuildingCard
         :building="building"
         :effective-color="buildingColorMap[building.id] || building.color"
@@ -1074,6 +1176,58 @@ function getBuildingCoalitionNames(buildingId: string): string {
   100% {
     transform: scale(1);
   }
+}
+
+.spatial-building-slot.is-swapped {
+  animation: swap-glow 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes swap-glow {
+  0% {
+    filter: drop-shadow(0 0 14px rgba(234, 179, 8, 0.85));
+  }
+  100% {
+    filter: none;
+  }
+}
+
+.switch-places-badge {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  background-color: #fef08a;
+  border: 1.5px solid #ca8a04;
+  border-radius: 9999px;
+  color: #713f12;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(202, 138, 4, 0.35);
+  pointer-events: none;
+  z-index: 60;
+}
+
+.switch-icon {
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.fade-pop-enter-active,
+.fade-pop-leave-active {
+  transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.fade-pop-enter-from,
+.fade-pop-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.8);
 }
 
 /* Transitions */
