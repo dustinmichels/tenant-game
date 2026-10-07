@@ -116,16 +116,25 @@ function handleSubmitSetup(payload: {
           :landlord-money="landlordMoney"
           :landlord-position="landlordPosition"
           :person-width="personWidth"
+          :has-begun="hasBegun"
           @update-building-position="gameStore.updateBuildingPosition"
           @update-building-positions="gameStore.updateBuildingPositions"
           @update-landlord-position="gameStore.updateLandlordPosition"
           @adjust-tenants="gameStore.adjustBuildingTenants"
-          @toggle-union="gameStore.toggleUnion"
-          @toggle-eviction="gameStore.toggleEviction"
-          @connect-coalition="gameStore.connectCoalition"
-          @disconnect-coalition="gameStore.disconnectCoalition"
-          @disconnect-building="gameStore.disconnectBuilding"
-          @undo-coalition="gameStore.undoLastCoalition"
+          @toggle-union="
+            (buildingId, tenantId, join) =>
+              hasBegun && gameStore.toggleUnion(buildingId, tenantId, join)
+          "
+          @toggle-eviction="
+            (buildingId, tenantId, evicted) =>
+              hasBegun && gameStore.toggleEviction(buildingId, tenantId, evicted)
+          "
+          @connect-coalition="
+            (sourceId, targetId) => hasBegun && gameStore.connectCoalition(sourceId, targetId)
+          "
+          @disconnect-coalition="(connId) => hasBegun && gameStore.disconnectCoalition(connId)"
+          @disconnect-building="(bId) => hasBegun && gameStore.disconnectBuilding(bId)"
+          @undo-coalition="() => hasBegun && gameStore.undoLastCoalition()"
         />
       </section>
     </div>

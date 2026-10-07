@@ -6,6 +6,8 @@ import {
   getBuildingUnionCount,
   getTotalUnionCount,
   getCoalitionUnionCount,
+  getCoalitionBuildingCount,
+  isBuildingOrganized,
 } from "../coalitions";
 import { useGameStore } from "../../stores/game";
 
@@ -63,6 +65,22 @@ describe("Coalition and Union counting logic", () => {
     expect(getCoalitionUnionCount([b1, b2, b3], groups)).toBe(6);
   });
 
+  it("counts number of buildings in a coalition correctly", () => {
+    const b1 = makeBuilding("b-1", 1, "#e11d48", 3);
+    const b2 = makeBuilding("b-2", 2, "#2563eb", 3);
+    const b3 = makeBuilding("b-3", 3, "#059669", 0);
+    const b4 = makeBuilding("b-4", 4, "#d97706", 0);
+
+    // No coalition
+    expect(getCoalitionBuildingCount([b1, b2, b3, b4], [])).toBe(0);
+
+    // Connect b1 and b2
+    const connections: CoalitionConnection[] = [{ id: "c1", sourceId: "b-1", targetId: "b-2" }];
+    const groups = computeCoalitionGroups([b1, b2, b3, b4], connections);
+
+    expect(getCoalitionBuildingCount([b1, b2, b3, b4], groups)).toBe(2);
+  });
+
   it("handles coalition formed by two buildings with 1 person each", () => {
     // Individually 1 person doesn't make a union (returns 0)
     const b1 = makeBuilding("b-1", 1, "#e11d48", 1);
@@ -100,6 +118,20 @@ describe("Coalition and Union counting logic", () => {
     const groups = computeCoalitionGroups([b1, b2], connections);
     expect(getBuildingUnionCount(b1, groups)).toBe(1);
     expect(getBuildingUnionCount(b2, groups)).toBe(1);
+  });
+
+  it("isBuildingOrganized returns true after two members total in the union (1 instigator + 1 joined)", () => {
+    const b1Alone = makeBuilding("b-1", 1, "#e11d48", 1, 8);
+    // 1 instigator alone: not organized
+    expect(isBuildingOrganized(b1Alone)).toBe(false);
+
+    // 2 members total (1 instigator + 1 joined resident): organized!
+    const b1WithTwo = makeBuilding("b-1", 1, "#e11d48", 2, 8);
+    expect(isBuildingOrganized(b1WithTwo)).toBe(true);
+
+    // 3 members: organized
+    const b1WithThree = makeBuilding("b-1", 1, "#e11d48", 3, 8);
+    expect(isBuildingOrganized(b1WithThree)).toBe(true);
   });
 
   it("excludes evicted tenants from coalition count and union count", () => {
@@ -176,6 +208,7 @@ describe("game store coalitionTenantsCount integration", () => {
     // In coalition = 4 (b1: 2, b2: 2; b3 is not in coalition!)
     expect(store.unionTenantsCount).toBe(6);
     expect(store.coalitionTenantsCount).toBe(4);
+    expect(store.coalitionBuildingsCount).toBe(2);
 
     // Disconnect coalition
     store.disconnectCoalition(store.coalitionConnections[0]!.id);

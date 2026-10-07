@@ -126,6 +126,36 @@ export function getCoalitionUnionCount(
 }
 
 /**
+ * Returns the number of buildings that belong to a coalition.
+ */
+export function getCoalitionBuildingCount(
+  buildings: Building[],
+  coalitions?: CoalitionGroup[] | CoalitionConnection[],
+): number {
+  if (!buildings || buildings.length === 0) return 0;
+
+  const groups: CoalitionGroup[] =
+    Array.isArray(coalitions) && coalitions.length > 0
+      ? "buildingIds" in (coalitions[0] ?? {})
+        ? (coalitions as CoalitionGroup[])
+        : computeCoalitionGroups(buildings, coalitions as CoalitionConnection[])
+      : [];
+
+  if (groups.length === 0) return 0;
+
+  const coalitionBuildingIds = new Set<string>();
+  for (const g of groups) {
+    if (Array.isArray(g.buildingIds)) {
+      for (const id of g.buildingIds) {
+        coalitionBuildingIds.add(id);
+      }
+    }
+  }
+
+  return buildings.filter((b) => coalitionBuildingIds.has(b.id)).length;
+}
+
+/**
  * Computes the connected coalition groups from buildings and active connections.
  * For each coalition, the dominant color is chosen based on whichever color has more unionized people.
  */
@@ -305,9 +335,5 @@ export function isBuildingOrganized(
     coalitionOrContext && typeof coalitionOrContext === "object"
       ? (coalitionOrContext as CoalitionGroup | CoalitionGroup[] | CoalitionConnection[])
       : undefined;
-  const unionCount = getBuildingUnionCount(building, context, allBuildings);
-  if (unionCount <= 0) return false;
-  const threshold =
-    building.tenants.length === 1 ? 1 : Math.max(2, Math.ceil(building.tenants.length / 2));
-  return unionCount >= threshold;
+  return getBuildingUnionCount(building, context, allBuildings) > 0;
 }

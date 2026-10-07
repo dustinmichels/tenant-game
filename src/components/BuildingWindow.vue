@@ -13,6 +13,7 @@ const props = withDefaults(
     isInstigator?: boolean;
     inUnion?: boolean;
     isEvicted?: boolean;
+    hasBegun?: boolean;
   }>(),
   {
     variant: 0,
@@ -22,6 +23,7 @@ const props = withDefaults(
     isInstigator: false,
     inUnion: false,
     isEvicted: false,
+    hasBegun: true,
   },
 );
 
@@ -55,6 +57,9 @@ const windowPaths = computed<PathInfo[]>(() => {
 });
 
 const tooltip = computed(() => {
+  if (!props.hasBegun) {
+    return `${props.label} (Resident)`;
+  }
   const status = props.isEvicted
     ? "Evicted"
     : props.isInstigator
@@ -64,21 +69,27 @@ const tooltip = computed(() => {
         : "Resident";
   return `${props.label} (${status}) — Click for actions`;
 });
+
+function handleClick(e: MouseEvent) {
+  if (!props.hasBegun) return;
+  emit("select", e);
+}
 </script>
 
 <template>
   <div
     class="building-window"
     :class="{
-      'is-instigator': isInstigator,
-      'is-union': inUnion,
-      'is-evicted': isEvicted,
+      'is-instigator': isInstigator && hasBegun,
+      'is-union': inUnion && hasBegun,
+      'is-evicted': isEvicted && hasBegun,
+      'is-interactive': hasBegun,
     }"
     :title="tooltip"
-    role="button"
-    tabindex="0"
-    @click="emit('select', $event)"
-    @contextmenu.prevent="emit('select', $event)"
+    :role="hasBegun ? 'button' : undefined"
+    :tabindex="hasBegun ? 0 : -1"
+    @click="handleClick($event)"
+    @contextmenu.prevent="handleClick($event)"
   >
     <!-- Sketched rough window frame -->
     <svg viewBox="0 0 36 53" class="window-svg-frame" aria-hidden="true">
@@ -98,10 +109,10 @@ const tooltip = computed(() => {
         :variant="variant"
         :label="label"
         :seed="seed"
-        :color="color"
-        :is-instigator="isInstigator"
-        :in-union="inUnion"
-        :is-evicted="isEvicted"
+        :color="hasBegun ? color : undefined"
+        :is-instigator="hasBegun && isInstigator"
+        :in-union="hasBegun && inUnion"
+        :is-evicted="hasBegun && isEvicted"
       />
     </div>
   </div>
@@ -114,6 +125,10 @@ const tooltip = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: default;
+}
+
+.building-window.is-interactive {
   cursor: context-menu;
 }
 
@@ -139,10 +154,9 @@ const tooltip = computed(() => {
   transition: background-color 0.2s ease;
 }
 
-.building-window:hover .window-pane-interior {
+.building-window.is-interactive:hover .window-pane-interior {
   background: radial-gradient(circle, rgba(254, 243, 199, 0.5) 0%, transparent 75%);
 }
-
 .building-window.is-union .window-pane-interior {
   background: radial-gradient(circle, rgba(254, 240, 138, 0.25) 0%, transparent 80%);
 }

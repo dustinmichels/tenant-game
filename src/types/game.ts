@@ -164,10 +164,3 @@ export interface BuildingPositionUpdate {
   x: number;
   y: number;
 }
-
-// Re-export domain and geometry utilities for clean access and backwards compatibility
-export * from "../utils/coalitions";
-export * from "../utils/layout";
-export * from "../utils/sizing";
-export * from "../utils/positions";
-export * from "../utils/eventLog";

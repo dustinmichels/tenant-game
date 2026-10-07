@@ -71,6 +71,7 @@ const props = withDefaults(
     landlordMoney?: number;
     landlordPosition?: { x: number; y: number };
     personWidth?: number;
+    hasBegun?: boolean;
   }>(),
   {
     defaultPeople: 8,
@@ -79,6 +80,7 @@ const props = withDefaults(
     buildingColorMap: () => ({}),
     landlordPosition: () => ({ x: 82, y: 3 }),
     personWidth: undefined,
+    hasBegun: true,
   },
 );
 
@@ -427,6 +429,7 @@ const contextMenu = ref<{
 });
 
 function handleTenantSelect(payload: { event: MouseEvent; tenant: Tenant; building: Building }) {
+  if (!props.hasBegun) return;
   if (threadDrag.value.isClickConnecting && threadDrag.value.sourceBuilding) {
     if (payload.building.id !== threadDrag.value.sourceBuilding.id) {
       completeConnection(threadDrag.value.sourceBuilding, payload.building);
@@ -449,14 +452,17 @@ function closeContextMenu() {
 }
 
 function handleJoinUnion(tenant: Tenant, building: Building) {
+  if (!props.hasBegun) return;
   emit("toggle-union", building.id, tenant.id, true);
 }
 
 function handleLeaveUnion(tenant: Tenant, building: Building) {
+  if (!props.hasBegun) return;
   emit("toggle-union", building.id, tenant.id, false);
 }
 
 function handleToggleEviction(tenant: Tenant, building: Building, evicted: boolean) {
+  if (!props.hasBegun) return;
   emit("toggle-eviction", building.id, tenant.id, evicted);
 }
 
@@ -665,10 +671,15 @@ let startPointerClientX = 0;
 let startPointerClientY = 0;
 
 function handleStartThread(building: Building, e: PointerEvent) {
+  if (!props.hasBegun) return;
   if (e.button !== 0) return;
   e.stopPropagation();
   e.preventDefault();
-
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+  toastNotice.value = null;
   updatePinPositions();
   const pin = pinPositions.value[building.id];
   const canvasEl = canvasRef.value;
@@ -798,6 +809,7 @@ function onThreadPointerUp(upEvent: PointerEvent) {
 }
 
 function completeConnection(source: Building, target: Building) {
+  if (!props.hasBegun) return;
   emit("connect-coalition", source.id, target.id);
   showToast(`Coalition formed: ${source.label} + ${target.label}!`, true);
   cancelThreadDrag();
@@ -820,6 +832,7 @@ function cancelThreadDrag() {
 }
 
 function handleBuildingSlotClick(building: Building) {
+  if (!props.hasBegun) return;
   if (threadDrag.value.isClickConnecting && threadDrag.value.sourceBuilding) {
     if (building.id !== threadDrag.value.sourceBuilding.id) {
       completeConnection(threadDrag.value.sourceBuilding, building);
@@ -982,329 +995,349 @@ function getBuildingCoalitionNames(buildingId: string): string {
 </script>
 
 <template>
-  <main
-    ref="canvasRef"
-    class="building-canvas"
-    :style="{
-      '--person-width': `${effectivePersonWidth}px`,
-      '--person-height': `${effectivePersonHeight}px`,
-      '--person-scale': `${effectivePersonScale}`,
-    }"
-    role="main"
-    @click="handleCanvasClick"
-  >
-    <!-- Coalition Connection Prompt Bar -->
-    <transition name="fade-slide">
-      <div v-if="threadDrag.isClickConnecting" class="coalition-connecting-banner">
-        <Cable :size="15" :stroke-width="1.5" class="banner-icon" />
-        <span class="banner-text">
-          <strong>Connecting Coalition:</strong> Click another building to connect with
-          {{ threadDrag.sourceBuilding?.label }}, or
-          <button type="button" class="cancel-link-btn" @click.stop="cancelThreadDrag">
-            cancel
-          </button>
-        </span>
-      </div>
-    </transition>
-
-    <!-- Coalition Toast Notice (with Undo button) -->
-    <transition name="fade-slide">
-      <div v-if="toastNotice" class="coalition-toast-banner">
-        <Cable :size="15" :stroke-width="1.5" class="toast-icon" />
-        <span class="toast-text">{{ toastNotice.text }}</span>
-        <button
-          v-if="toastNotice.showUndo"
-          type="button"
-          class="toast-undo-btn"
-          title="Undo last coalition connection"
-          @click.stop="handleToastUndo"
-        >
-          ↶ Undo
-        </button>
-        <button
-          type="button"
-          class="toast-close-btn"
-          @click.stop="toastNotice = null"
-          aria-label="Close notice"
-        >
-          <X :size="12" :stroke-width="1.5" />
-        </button>
-      </div>
-    </transition>
-
-    <!-- SVG Layer for Coalition Threads -->
-    <svg
-      class="coalition-threads-layer"
+  <div class="building-canvas-viewport">
+    <main
+      ref="canvasRef"
+      class="building-canvas"
       :style="{
-        width: `${canvasDimensions.width}px`,
-        height: `${canvasDimensions.height}px`,
+        '--person-width': `${effectivePersonWidth}px`,
+        '--person-height': `${effectivePersonHeight}px`,
+        '--person-scale': `${effectivePersonScale}`,
       }"
-      aria-label="Coalition threads layer"
+      role="main"
+      @click="handleCanvasClick"
     >
-      <!-- Established coalition threads -->
-      <g v-for="thread in renderedThreads" :key="thread.id" class="thread-group">
-        <!-- Invisible wider stroke for easy click-to-disconnect -->
-        <path
-          :d="thread.pathData"
-          class="thread-hit-area"
-          @click.stop="promptBreakCoalition(thread)"
-        >
-          <title>
-            {{
-              `Coalition Thread: Click to disconnect ${thread.sourceLabel} and ${thread.targetLabel}`
-            }}
-          </title>
-        </path>
-
-        <!-- Rough.js hand-drawn sketched thread paths -->
-        <path
-          v-for="(p, pIdx) in thread.roughPaths"
-          :key="pIdx"
-          :d="p.d"
-          :stroke="p.stroke"
-          :stroke-width="p.strokeWidth"
-          :fill="p.fill || 'none'"
-          class="thread-sketch-path"
-          pointer-events="none"
-        />
-
-        <!-- Subtle dashed stitch line along the thread -->
-        <path
-          :d="thread.pathData"
-          :stroke="thread.color"
-          class="thread-stitch-line"
-          pointer-events="none"
-        />
-
-        <!-- Disconnect / Scissors cut pin at curve midpoint -->
-        <g
-          class="thread-cut-pin"
-          :transform="`translate(${thread.midX}, ${thread.midY})`"
-          role="button"
-          :aria-label="`Disconnect coalition between ${thread.sourceLabel} and ${thread.targetLabel}`"
-          @click.stop="promptBreakCoalition(thread)"
-        >
-          <!-- Stable transparent hit area so hover does not jitter at borders -->
-          <circle r="16" class="cut-pin-hit-area" />
-          <g class="cut-pin-content">
-            <circle r="11" class="cut-pin-bg" :style="{ stroke: thread.color }" />
-            <Scissors :size="13" :stroke-width="1.5" :x="-6.5" :y="-6.5" class="cut-pin-icon" />
-          </g>
-          <title>
-            {{ `Disconnect coalition between ${thread.sourceLabel} and ${thread.targetLabel}` }}
-          </title>
-        </g>
-      </g>
-
-      <!-- Live dragging thread preview -->
-      <g v-if="activeDragThread" class="live-drag-thread-group" pointer-events="none">
-        <path
-          :d="activeDragThread.pathData"
-          :stroke="activeDragThread.color"
-          class="live-thread-preview-path"
-        />
-        <!-- Thread endpoint indicator / needle -->
-        <circle
-          :cx="activeDragThread.endX"
-          :cy="activeDragThread.endY"
-          r="4.5"
-          :fill="activeDragThread.color"
-          class="live-thread-end-dot"
-        />
-      </g>
-    </svg>
-
-    <!-- Landlord, Inc. Corporate Headquarters Skyscraper (Movable) -->
-    <div
-      v-if="showLandlord"
-      :ref="(el) => setBuildingRef('landlord', el)"
-      class="spatial-building-slot spatial-landlord-slot"
-      :class="{
-        'is-active-drag': activeDragBuildingId === 'landlord',
-        'is-being-placed-upon': hoveredCollisionBuildingId === 'landlord',
-        'is-swapped': swappedBuildingIds.has('landlord'),
-        'is-repulsed': repulsedBuildingIds.has('landlord'),
-        'is-editable': isEditingBuildings,
-      }"
-      :style="{
-        left: `${currentLandlordPos.x}%`,
-        top: `${currentLandlordPos.y}%`,
-      }"
-      aria-label="Landlord, Inc. Corporate Headquarters"
-    >
-      <!-- Switch places indicator pill -->
-      <transition name="fade-pop">
-        <div
-          v-if="hoveredCollisionBuildingId === 'landlord'"
-          class="switch-places-badge"
-          aria-hidden="true"
-        >
-          <span class="switch-icon">⇄</span>
-          <span class="switch-text">Switch places</span>
-        </div>
-      </transition>
-      <LandlordBuilding
-        :landlord-money="landlordMoney"
-        :can-move="isEditingBuildings"
-        :edit-buildings="isEditingBuildings"
-        @pointerdown-drag="handleLandlordPointerDownDrag"
-      />
-    </div>
-
-    <!-- Spatially Scattered Residential Buildings -->
-    <div
-      v-for="building in buildings"
-      :key="building.id"
-      :ref="(el) => setBuildingRef(building.id, el)"
-      class="spatial-building-slot"
-      :class="{
-        'is-active-drag': activeDragBuildingId === building.id,
-        'is-being-placed-upon': hoveredCollisionBuildingId === building.id,
-        'is-swapped': swappedBuildingIds.has(building.id),
-        'is-repulsed': repulsedBuildingIds.has(building.id),
-        'is-editable': isEditingBuildings,
-      }"
-      :style="{
-        left: `${building.x}%`,
-        top: `${building.y}%`,
-      }"
-      @click="handleBuildingSlotClick(building)"
-    >
-      <!-- Switch places indicator pill -->
-      <transition name="fade-pop">
-        <div
-          v-if="hoveredCollisionBuildingId === building.id"
-          class="switch-places-badge"
-          aria-hidden="true"
-        >
-          <span class="switch-icon">⇄</span>
-          <span class="switch-text">Switch places</span>
-        </div>
-      </transition>
-      <BuildingCard
-        :building="building"
-        :effective-color="buildingColorMap[building.id] || building.color"
-        :is-in-coalition="isBuildingInCoalition(building.id)"
-        :is-organized="isBuildingOrganized(building, coalitions)"
-        :coalitions="coalitions"
-        :union-count="getBuildingUnionCount(building, coalitions, buildings)"
-        :coalition-names="getBuildingCoalitionNames(building.id)"
-        :is-connecting-source="threadDrag.sourceBuilding?.id === building.id"
-        :is-connecting-target="threadDrag.targetBuilding?.id === building.id"
-        :person-width="effectivePersonWidth"
-        :can-move="isEditingBuildings"
-        :edit-buildings="isEditingBuildings"
-        @tenant-select="handleTenantSelect"
-        @adjust-tenants="handleOpenAdjustModal"
-        @pointerdown-drag="handlePointerDownDrag"
-        @start-thread="handleStartThread"
-      />
-    </div>
-
-    <!-- Action Menu for Tenants -->
-    <TenantContextMenu
-      :show="contextMenu.show"
-      :x="contextMenu.x"
-      :y="contextMenu.y"
-      :tenant="contextMenu.tenant"
-      :building="contextMenu.building"
-      @close="closeContextMenu"
-      @join="handleJoinUnion"
-      @leave="handleLeaveUnion"
-      @evict="handleToggleEviction"
-    />
-
-    <!-- Modal for Adjusting Building Tenants -->
-    <TenantAdjustModal
-      :show="adjustModal.show"
-      :building="adjustModal.building"
-      :default-people="defaultPeople"
-      :total-buildings="buildings.length"
-      @close="closeAdjustModal"
-      @save="handleSaveAdjustTenants"
-    />
-
-    <!-- Modal for Breaking Coalition Confirmation -->
-    <BreakCoalitionModal
-      :show="breakModal.show"
-      :connection-id="breakModal.connectionId"
-      :source-label="breakModal.sourceLabel"
-      :target-label="breakModal.targetLabel"
-      @close="closeBreakModal"
-      @confirm="handleConfirmBreakCoalition"
-    />
-    <!-- Bottom Corner: Actions Box -->
-    <div class="canvas-actions-panel" role="region" aria-label="Canvas Actions">
-      <RoughBox
-        :stroke="'#786b59'"
-        :fill="'#fcfaf6'"
-        fill-style="solid"
-        :roughness="0.5"
-        :bowing="0.3"
-        :stroke-width="1.4"
-        :seed="905"
-        class="canvas-actions-box"
+      <!-- SVG Layer for Coalition Threads -->
+      <svg
+        class="coalition-threads-layer"
+        :style="{
+          width: `${canvasDimensions.width}px`,
+          height: `${canvasDimensions.height}px`,
+        }"
+        aria-label="Coalition threads layer"
       >
-        <div class="canvas-actions-inner" :class="{ 'is-collapsed': actionsCollapsed }">
+        <!-- Established coalition threads -->
+        <g v-for="thread in renderedThreads" :key="thread.id" class="thread-group">
+          <!-- Invisible wider stroke for easy click-to-disconnect -->
+          <path
+            :d="thread.pathData"
+            class="thread-hit-area"
+            @click.stop="promptBreakCoalition(thread)"
+          >
+            <title>
+              {{
+                `Coalition Thread: Click to disconnect ${thread.sourceLabel} and ${thread.targetLabel}`
+              }}
+            </title>
+          </path>
+
+          <!-- Rough.js hand-drawn sketched thread paths -->
+          <path
+            v-for="(p, pIdx) in thread.roughPaths"
+            :key="pIdx"
+            :d="p.d"
+            :stroke="p.stroke"
+            :stroke-width="p.strokeWidth"
+            :fill="p.fill || 'none'"
+            class="thread-sketch-path"
+            pointer-events="none"
+          />
+
+          <!-- Subtle dashed stitch line along the thread -->
+          <path
+            :d="thread.pathData"
+            :stroke="thread.color"
+            class="thread-stitch-line"
+            pointer-events="none"
+          />
+
+          <!-- Disconnect / Scissors cut pin at curve midpoint -->
+          <g
+            class="thread-cut-pin"
+            :transform="`translate(${thread.midX}, ${thread.midY})`"
+            role="button"
+            :aria-label="`Disconnect coalition between ${thread.sourceLabel} and ${thread.targetLabel}`"
+            @click.stop="promptBreakCoalition(thread)"
+          >
+            <!-- Stable transparent hit area so hover does not jitter at borders -->
+            <circle r="16" class="cut-pin-hit-area" />
+            <g class="cut-pin-content">
+              <circle r="11" class="cut-pin-bg" :style="{ stroke: thread.color }" />
+              <Scissors :size="13" :stroke-width="1.5" :x="-6.5" :y="-6.5" class="cut-pin-icon" />
+            </g>
+            <title>
+              {{ `Disconnect coalition between ${thread.sourceLabel} and ${thread.targetLabel}` }}
+            </title>
+          </g>
+        </g>
+
+        <!-- Live dragging thread preview -->
+        <g v-if="activeDragThread" class="live-drag-thread-group" pointer-events="none">
+          <path
+            :d="activeDragThread.pathData"
+            :stroke="activeDragThread.color"
+            class="live-thread-preview-path"
+          />
+          <!-- Thread endpoint indicator / needle -->
+          <circle
+            :cx="activeDragThread.endX"
+            :cy="activeDragThread.endY"
+            r="4.5"
+            :fill="activeDragThread.color"
+            class="live-thread-end-dot"
+          />
+        </g>
+      </svg>
+
+      <!-- Landlord, Inc. Corporate Headquarters Skyscraper (Movable) -->
+      <div
+        v-if="showLandlord"
+        :ref="(el) => setBuildingRef('landlord', el)"
+        class="spatial-building-slot spatial-landlord-slot"
+        :class="{
+          'is-active-drag': activeDragBuildingId === 'landlord',
+          'is-being-placed-upon': hoveredCollisionBuildingId === 'landlord',
+          'is-swapped': swappedBuildingIds.has('landlord'),
+          'is-repulsed': repulsedBuildingIds.has('landlord'),
+          'is-editable': isEditingBuildings,
+        }"
+        :style="{
+          left: `${currentLandlordPos.x}%`,
+          top: `${currentLandlordPos.y}%`,
+        }"
+        aria-label="Landlord, Inc. Corporate Headquarters"
+      >
+        <!-- Switch places indicator pill -->
+        <transition name="fade-pop">
+          <div
+            v-if="hoveredCollisionBuildingId === 'landlord'"
+            class="switch-places-badge"
+            aria-hidden="true"
+          >
+            <span class="switch-icon">⇄</span>
+            <span class="switch-text">Switch places</span>
+          </div>
+        </transition>
+        <LandlordBuilding
+          :landlord-money="landlordMoney"
+          :can-move="isEditingBuildings"
+          :edit-buildings="isEditingBuildings"
+          @pointerdown-drag="handleLandlordPointerDownDrag"
+        />
+      </div>
+
+      <!-- Spatially Scattered Residential Buildings -->
+      <div
+        v-for="building in buildings"
+        :key="building.id"
+        :ref="(el) => setBuildingRef(building.id, el)"
+        class="spatial-building-slot"
+        :class="{
+          'is-active-drag': activeDragBuildingId === building.id,
+          'is-being-placed-upon': hoveredCollisionBuildingId === building.id,
+          'is-swapped': swappedBuildingIds.has(building.id),
+          'is-repulsed': repulsedBuildingIds.has(building.id),
+          'is-editable': isEditingBuildings,
+        }"
+        :style="{
+          left: `${building.x}%`,
+          top: `${building.y}%`,
+        }"
+        @click="handleBuildingSlotClick(building)"
+      >
+        <!-- Switch places indicator pill -->
+        <transition name="fade-pop">
+          <div
+            v-if="hoveredCollisionBuildingId === building.id"
+            class="switch-places-badge"
+            aria-hidden="true"
+          >
+            <span class="switch-icon">⇄</span>
+            <span class="switch-text">Switch places</span>
+          </div>
+        </transition>
+        <BuildingCard
+          :building="building"
+          :effective-color="buildingColorMap[building.id] || building.color"
+          :is-in-coalition="isBuildingInCoalition(building.id)"
+          :is-organized="isBuildingOrganized(building, coalitions)"
+          :coalitions="coalitions"
+          :union-count="getBuildingUnionCount(building, coalitions, buildings)"
+          :coalition-names="getBuildingCoalitionNames(building.id)"
+          :is-connecting-source="threadDrag.sourceBuilding?.id === building.id"
+          :is-connecting-target="threadDrag.targetBuilding?.id === building.id"
+          :person-width="effectivePersonWidth"
+          :can-move="isEditingBuildings"
+          :edit-buildings="isEditingBuildings"
+          :has-begun="hasBegun"
+          @tenant-select="handleTenantSelect"
+          @adjust-tenants="handleOpenAdjustModal"
+          @pointerdown-drag="handlePointerDownDrag"
+          @start-thread="handleStartThread"
+        />
+      </div>
+
+      <!-- Action Menu for Tenants -->
+      <TenantContextMenu
+        :show="contextMenu.show"
+        :x="contextMenu.x"
+        :y="contextMenu.y"
+        :tenant="contextMenu.tenant"
+        :building="contextMenu.building"
+        @close="closeContextMenu"
+        @join="handleJoinUnion"
+        @leave="handleLeaveUnion"
+        @evict="handleToggleEviction"
+      />
+
+      <!-- Modal for Adjusting Building Tenants -->
+      <TenantAdjustModal
+        :show="adjustModal.show"
+        :building="adjustModal.building"
+        :default-people="defaultPeople"
+        :total-buildings="buildings.length"
+        @close="closeAdjustModal"
+        @save="handleSaveAdjustTenants"
+      />
+
+      <!-- Modal for Breaking Coalition Confirmation -->
+      <BreakCoalitionModal
+        :show="breakModal.show"
+        :connection-id="breakModal.connectionId"
+        :source-label="breakModal.sourceLabel"
+        :target-label="breakModal.targetLabel"
+        @close="closeBreakModal"
+        @confirm="handleConfirmBreakCoalition"
+      />
+      <!-- Bottom Corner: Actions Box -->
+      <div class="canvas-actions-panel" role="region" aria-label="Canvas Actions">
+        <RoughBox
+          :stroke="'#786b59'"
+          :fill="'#fcfaf6'"
+          fill-style="solid"
+          :roughness="0.5"
+          :bowing="0.3"
+          :stroke-width="1.4"
+          :seed="905"
+          class="canvas-actions-box"
+        >
+          <div class="canvas-actions-inner" :class="{ 'is-collapsed': actionsCollapsed }">
+            <button
+              type="button"
+              class="actions-header"
+              :class="{ 'is-collapsed': actionsCollapsed }"
+              :aria-expanded="!actionsCollapsed"
+              aria-controls="canvas-actions-items"
+              :title="actionsCollapsed ? 'Expand actions' : 'Collapse actions'"
+              @click="actionsCollapsed = !actionsCollapsed"
+            >
+              <span class="actions-title">Actions</span>
+              <span class="actions-toggle-icon" aria-hidden="true">
+                <ChevronUp v-if="actionsCollapsed" :size="13" :stroke-width="2" />
+                <ChevronDown v-else :size="13" :stroke-width="2" />
+              </span>
+            </button>
+
+            <div v-show="!actionsCollapsed" id="canvas-actions-items" class="actions-items">
+              <!-- Can edit toggle -->
+              <label
+                class="can-edit-toggle edit-buildings-toggle can-move-toggle"
+                :class="{ 'is-active': isEditingBuildings }"
+              >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  v-model="isEditingBuildings"
+                  :aria-checked="isEditingBuildings"
+                  class="toggle-input sr-only"
+                />
+                <span class="toggle-switch" aria-hidden="true">
+                  <span class="toggle-knob" />
+                </span>
+                <span class="toggle-label">Can edit</span>
+              </label>
+
+              <!-- Show landlord toggle -->
+              <label
+                class="can-move-toggle show-landlord-toggle"
+                :class="{ 'is-active': showLandlord }"
+              >
+                <input
+                  type="checkbox"
+                  role="switch"
+                  v-model="showLandlord"
+                  :aria-checked="showLandlord"
+                  class="toggle-input sr-only"
+                />
+                <span class="toggle-switch" aria-hidden="true">
+                  <span class="toggle-knob" />
+                </span>
+                <span class="toggle-label">Show landlord</span>
+              </label>
+            </div>
+          </div>
+        </RoughBox>
+      </div>
+    </main>
+
+    <!-- Coalition Toast Notice & Connecting Banner (Bottom Center) -->
+    <div class="toast-anchor">
+      <transition name="toast-slide-up" mode="out-in">
+        <div
+          v-if="threadDrag.isClickConnecting"
+          key="connecting"
+          class="coalition-connecting-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <Cable :size="15" :stroke-width="1.5" class="banner-icon" />
+          <span class="banner-text">
+            <strong>Connecting Coalition:</strong> Click another building to connect with
+            {{ threadDrag.sourceBuilding?.label }}, or
+            <button type="button" class="cancel-link-btn" @click.stop="cancelThreadDrag">
+              cancel
+            </button>
+          </span>
+        </div>
+        <div
+          v-else-if="toastNotice"
+          key="notice"
+          class="coalition-toast-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <Cable :size="15" :stroke-width="1.5" class="toast-icon" />
+          <span class="toast-text">{{ toastNotice.text }}</span>
+          <button
+            v-if="toastNotice.showUndo"
+            type="button"
+            class="toast-undo-btn"
+            title="Undo last coalition connection"
+            @click.stop="handleToastUndo"
+          >
+            ↶ Undo
+          </button>
           <button
             type="button"
-            class="actions-header"
-            :class="{ 'is-collapsed': actionsCollapsed }"
-            :aria-expanded="!actionsCollapsed"
-            aria-controls="canvas-actions-items"
-            :title="actionsCollapsed ? 'Expand actions' : 'Collapse actions'"
-            @click="actionsCollapsed = !actionsCollapsed"
+            class="toast-close-btn"
+            @click.stop="toastNotice = null"
+            aria-label="Close notice"
           >
-            <span class="actions-title">Actions</span>
-            <span class="actions-toggle-icon" aria-hidden="true">
-              <ChevronUp v-if="actionsCollapsed" :size="13" :stroke-width="2" />
-              <ChevronDown v-else :size="13" :stroke-width="2" />
-            </span>
+            <X :size="12" :stroke-width="1.5" />
           </button>
-
-          <div v-show="!actionsCollapsed" id="canvas-actions-items" class="actions-items">
-            <!-- Can edit toggle -->
-            <label
-              class="can-edit-toggle edit-buildings-toggle can-move-toggle"
-              :class="{ 'is-active': isEditingBuildings }"
-            >
-              <input
-                type="checkbox"
-                role="switch"
-                v-model="isEditingBuildings"
-                :aria-checked="isEditingBuildings"
-                class="toggle-input sr-only"
-              />
-              <span class="toggle-switch" aria-hidden="true">
-                <span class="toggle-knob" />
-              </span>
-              <span class="toggle-label">Can edit</span>
-            </label>
-
-            <!-- Show landlord toggle -->
-            <label
-              class="can-move-toggle show-landlord-toggle"
-              :class="{ 'is-active': showLandlord }"
-            >
-              <input
-                type="checkbox"
-                role="switch"
-                v-model="showLandlord"
-                :aria-checked="showLandlord"
-                class="toggle-input sr-only"
-              />
-              <span class="toggle-switch" aria-hidden="true">
-                <span class="toggle-knob" />
-              </span>
-              <span class="toggle-label">Show landlord</span>
-            </label>
-          </div>
         </div>
-      </RoughBox>
+      </transition>
     </div>
-  </main>
+  </div>
 </template>
 <style scoped>
+.building-canvas-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 .building-canvas {
   position: relative;
   width: 100%;
@@ -1319,8 +1352,8 @@ function getBuildingCoalitionNames(buildingId: string): string {
 }
 
 .banner-icon {
-  font-size: 14px;
-  font-weight: 800;
+  font-size: 15px;
+  flex-shrink: 0;
 }
 
 /* Landlord, Inc. Skyscraper Slot */
@@ -1607,35 +1640,20 @@ function getBuildingCoalitionNames(buildingId: string): string {
   transform: translateX(-50%) scale(0.8);
 }
 
-/* Transitions */
-.fade-slide-enter-active,
-.fade-slide-leave-active {
-  transition: all 0.2s ease;
-}
-
-.fade-slide-enter-from,
-.fade-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-
 /* Coalition banners */
 .coalition-connecting-banner {
-  position: sticky;
-  top: 12px;
-  left: 16px;
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 16px;
+  padding: 8px 18px;
   background-color: #dbeafe;
   border: 1.5px solid #3b82f6;
   border-radius: 8px;
   color: #1e40af;
   font-size: 0.85rem;
-  z-index: 45;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
-  margin-left: 16px;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.25);
+  max-width: 100%;
 }
 
 .cancel-link-btn {
@@ -1653,22 +1671,43 @@ function getBuildingCoalitionNames(buildingId: string): string {
   color: #1e3a8a;
 }
 
+/* Toast Notification (Bottom Center) */
+.toast-anchor {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+  max-width: calc(100% - 32px);
+}
+
+.toast-slide-up-enter-active,
+.toast-slide-up-leave-active {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toast-slide-up-enter-from,
+.toast-slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
+}
+
 .coalition-toast-banner {
-  position: sticky;
-  top: 12px;
-  left: 16px;
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 16px;
+  padding: 8px 18px;
   background-color: #fef3c7;
   border: 1.5px solid #d97706;
   border-radius: 8px;
   color: #78350f;
   font-size: 0.85rem;
-  z-index: 45;
-  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.2);
-  margin-left: 16px;
+  box-shadow: 0 4px 14px rgba(217, 119, 6, 0.25);
+  max-width: 100%;
 }
 
 .toast-icon {

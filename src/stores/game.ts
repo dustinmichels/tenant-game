@@ -1,7 +1,5 @@
-import { defineStore, getActivePinia, setActivePinia, createPinia } from "pinia";
-import piniaPluginPersistedstate from "pinia-plugin-persistedstate";
+import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import { useRefHistory } from "@vueuse/core";
 import type {
   GameState,
   Building,
@@ -15,35 +13,26 @@ import type {
   CoalitionGroup,
 } from "../types/game";
 import {
-  PHASES,
-  BUILDING_COLORS,
-  getBuildingColor,
   isBuildingOrganized,
   getBuildingUnionCount,
-  getTotalUnionCount,
   getCoalitionUnionCount,
-  generateDefaultPositions,
+  getCoalitionBuildingCount,
   computeCoalitionGroups,
   getEffectiveBuildingColorMap,
-  calculateOptimalPersonSize,
-  BASELINE_PERSON_WIDTH,
-  isSpendEvent,
-  isSpendEventText,
-  isEarnEvent,
-  isEarnEventText,
-} from "../types/game";
+  getBuildingColor,
+} from "../utils/coalitions";
+import { generateDefaultPositions } from "../utils/positions";
+import { calculateOptimalPersonSize, BASELINE_PERSON_WIDTH } from "../utils/sizing";
 import { generateDivergentPalette } from "../utils/colorTheory";
 import { calculateDefaultLandlordMoney } from "../utils/currency";
+import {
+  formatSpendEventText,
+  formatEarnEventText,
+  isSpendEventText,
+  isEarnEventText,
+} from "../utils/eventLog";
 
 const STORAGE_KEY = "tenant_union_game_state_v1";
-const storage =
-  typeof window !== "undefined" && window.localStorage
-    ? window.localStorage
-    : {
-        getItem: () => null,
-        setItem: () => {},
-        removeItem: () => {},
-      };
 const VARIANT_COUNT = 5;
 
 function createDefaultState(): GameState {
@@ -57,8 +46,6 @@ function createDefaultState(): GameState {
     landlordStartingMoney: initialMoney,
     landlordMoney: initialMoney,
     personWidth: sizing.personWidth,
-    personHeight: sizing.personHeight,
-    personScale: sizing.personScale,
     isConfigured: false,
     hasBegun: false,
     buildings: [],
@@ -78,7 +65,6 @@ function createDefaultState(): GameState {
     events: [],
     landlordPosition: { x: 82, y: 3 },
     showLandlord: true,
-    updatedAt: Date.now(),
   };
 }
 
@@ -129,30 +115,6 @@ function generateBuildings(
   return result;
 }
 
-export function formatSpendEventText(amount: number): string {
-  if (amount >= 1_000_000 && amount % 1_000_000 === 0) {
-    return `Landlord spends ${amount / 1_000_000}m`;
-  }
-  if (amount >= 1_000 && amount % 1_000 === 0) {
-    return `Landlord spends ${amount / 1_000}k`;
-  }
-  return `Landlord spends $${amount.toLocaleString()}`;
-}
-
-export function formatEarnEventText(amount: number): string {
-  if (amount >= 1_000_000 && amount % 1_000_000 === 0) {
-    return `Landlord earns ${amount / 1_000_000}m`;
-  }
-  if (amount >= 1_000 && amount % 1_000 === 0) {
-    return `Landlord earns ${amount / 1_000}k`;
-  }
-  return `Landlord earns $${amount.toLocaleString()}`;
-}
-
-export function formatDiceRollEventText(total: number): string {
-  return `🎲 Group rolled ${total}`;
-}
-
 export const useGameStore = defineStore(
   "game",
   () => {
@@ -163,17 +125,8 @@ export const useGameStore = defineStore(
     const landlordStartingMoney = ref(initial.landlordStartingMoney ?? initial.landlordMoney ?? 0);
     const landlordMoney = ref(initial.landlordMoney ?? initial.landlordStartingMoney ?? 0);
     const personWidth = ref(initial.personWidth ?? BASELINE_PERSON_WIDTH);
-    const personHeight = ref(initial.personHeight ?? Math.round(BASELINE_PERSON_WIDTH / 0.68));
-    const personScale = ref(initial.personScale ?? 1.0);
     const isConfigured = ref(initial.isConfigured);
-    const hasBegun = ref(
-      initial.hasBegun !== undefined
-        ? initial.hasBegun
-        : Boolean(
-            initial.isConfigured &&
-            (initial.round > 1 || (initial.events && initial.events.length > 0)),
-          ),
-    );
+    const hasBegun = ref(initial.hasBegun ?? false);
     const landlordPosition = ref<{ x: number; y: number }>(
       initial.landlordPosition ?? { x: 82, y: 3 },
     );
@@ -184,91 +137,34 @@ export const useGameStore = defineStore(
     const phase = ref<GamePhase>(initial.phase);
     const tallies = ref<Record<number, RoundTally>>(initial.tallies);
     const events = ref<GameEvent[]>(initial.events ?? []);
-    const updatedAt = ref(initial.updatedAt);
-    const canEdit = ref(true);
-    const isEditBuildings = canEdit;
-    const isEditPosition = canEdit;
+    const isEditBuildings = ref(true);
+    const isEditPosition = ref(true);
 
-    const {
-      undo: undoEventHistory,
-      redo: redoEvent,
-      canUndo: canUndoEvent,
-      canRedo: canRedoEvent,
-      clear: clearEventHistory,
-    } = useRefHistory(events, { deep: true, flush: "sync" });
-    const { undo: undoCoalitionHistory, canUndo: canUndoCoalitionHistory } = useRefHistory(
-      coalitionConnections,
-      { deep: true, flush: "sync" },
-    );
-
-    const state = computed<GameState>(() => ({
-      buildingCount: buildingCount.value,
-      peoplePerBuilding: peoplePerBuilding.value,
-      landlordStartingMoney: landlordStartingMoney.value,
-      landlordMoney: landlordMoney.value,
-      personWidth: personWidth.value,
-      personHeight: personHeight.value,
-      personScale: personScale.value,
-      landlordPosition: landlordPosition.value,
-      showLandlord: showLandlord.value,
-      isConfigured: isConfigured.value,
-      hasBegun: hasBegun.value,
-      buildings: buildings.value,
-      coalitionConnections: coalitionConnections.value,
-      round: round.value,
-      phase: phase.value,
-      tallies: tallies.value,
-      events: events.value,
-      updatedAt: updatedAt.value,
-    }));
-
-    const totalBuildings = computed(() => buildings.value.length);
-    const totalTenants = computed(() =>
-      buildings.value.reduce((sum, b) => sum + b.tenants.length, 0),
-    );
-    const currentPhaseInfo = computed(() => PHASES.find((p) => p.id === phase.value) ?? PHASES[0]);
     const coalitions = computed<CoalitionGroup[]>(() =>
       computeCoalitionGroups(buildings.value, coalitionConnections.value),
     );
     const buildingColorMap = computed<Record<string, string>>(() =>
       getEffectiveBuildingColorMap(buildings.value, coalitionConnections.value),
     );
-    const canUndoCoalition = computed(() => coalitionConnections.value.length > 0);
-    // Counting unions rule: at least 2 people needed to count as a union (standalone or via coalition)
     const unionTenantsCount = computed(() =>
       buildings.value.reduce((sum, b) => sum + getBuildingUnionCount(b, coalitions.value), 0),
     );
     const coalitionTenantsCount = computed(() =>
       getCoalitionUnionCount(buildings.value, coalitions.value),
     );
-    const totalEvictionsCount = computed(() =>
-      buildings.value.reduce((sum, b) => sum + b.tenants.filter((t) => t.isEvicted).length, 0),
+    const coalitionBuildingsCount = computed(() =>
+      getCoalitionBuildingCount(buildings.value, coalitions.value),
     );
-    const organizedBuildingsCount = computed(
-      () => buildings.value.filter((b) => isBuildingOrganized(b, coalitions.value)).length,
-    );
-    const canUndoLandlordSpend = computed(() => landlordMoney.value < landlordStartingMoney.value);
-    const eventsJson = computed(() => JSON.stringify(events.value, null, 2));
-
-    function persist() {
-      // Managed automatically by pinia-plugin-persistedstate
-    }
-
-    function toggleEditPosition() {
-      isEditPosition.value = !isEditPosition.value;
-    }
-    function reloadFromStorage() {
-      // Managed automatically by pinia-plugin-persistedstate
-    }
 
     function syncAllRoundTallies() {
       const currentRound = round.value;
       const bldgs = buildings.value;
+      const currentCoalitions = coalitions.value;
       const totalOrganized = bldgs.reduce(
-        (sum, b) => sum + getBuildingUnionCount(b, coalitions.value),
+        (sum, b) => sum + getBuildingUnionCount(b, currentCoalitions),
         0,
       );
-      const bldgsOrganized = bldgs.filter((b) => isBuildingOrganized(b, coalitions.value)).length;
+      const bldgsOrganized = bldgs.filter((b) => isBuildingOrganized(b, currentCoalitions)).length;
 
       for (let r = 1; r <= currentRound; r++) {
         const existing = tallies.value[r];
@@ -285,11 +181,10 @@ export const useGameStore = defineStore(
 
         if (r === currentRound) {
           const prevOrganized = r > 1 ? (tallies.value[r - 1]?.totalOrganized ?? 0) : 0;
-          const currentFunds = landlordMoney.value;
           tallies.value[r] = {
             round: r,
             landlordSpending: existing?.landlordSpending ?? null,
-            landlordRemaining: existing?.landlordRemaining ?? currentFunds,
+            landlordRemaining: existing?.landlordRemaining ?? landlordMoney.value,
             totalOrganized,
             organizedChange: totalOrganized - prevOrganized,
             evictions: roundEvictions,
@@ -302,8 +197,6 @@ export const useGameStore = defineStore(
         }
       }
     }
-
-    const syncCurrentRoundTally = syncAllRoundTallies;
 
     function setupGame(
       newBuildingCount: number,
@@ -326,7 +219,6 @@ export const useGameStore = defineStore(
         canvasH = Math.max(600, window.innerHeight - 65);
       }
       const sizing = calculateOptimalPersonSize(validBuildings, validPeople, canvasW, canvasH);
-
       const newBuildings = generateBuildings(validBuildings, validPeople, canvasW, canvasH);
       const initialOrganized = newBuildings.reduce((sum, b) => sum + getBuildingUnionCount(b), 0);
       const initialBldgsOrganized = newBuildings.filter((b) => isBuildingOrganized(b)).length;
@@ -336,11 +228,10 @@ export const useGameStore = defineStore(
       landlordStartingMoney.value = initialMoney;
       landlordMoney.value = initialMoney;
       personWidth.value = sizing.personWidth;
-      personHeight.value = sizing.personHeight;
-      personScale.value = sizing.personScale;
       isConfigured.value = true;
       hasBegun.value = false;
-      canEdit.value = true;
+      isEditBuildings.value = true;
+      isEditPosition.value = true;
       buildings.value = newBuildings;
       round.value = 1;
       phase.value = 1;
@@ -358,10 +249,8 @@ export const useGameStore = defineStore(
         },
       };
       events.value = [];
-      updatedAt.value = Date.now();
       landlordPosition.value = { x: 82, y: 3 };
       showLandlord.value = true;
-      persist();
     }
 
     function spendLandlordMoney(amount = 50000) {
@@ -376,53 +265,13 @@ export const useGameStore = defineStore(
       if (existing) {
         existing.landlordSpending = currentSpend;
         existing.landlordRemaining = newFunds;
-      } else {
-        syncCurrentRoundTally();
-        if (tallies.value[currentRound]) {
-          tallies.value[currentRound].landlordSpending = currentSpend;
-          tallies.value[currentRound].landlordRemaining = newFunds;
-        }
       }
+
       addEvent(formatSpendEventText(amount), "spend", undefined, {
         type: "spend",
         amount,
         round: currentRound,
       });
-
-      updatedAt.value = Date.now();
-      persist();
-    }
-
-    function undoLandlordSpend(amount = 50000) {
-      for (let i = events.value.length - 1; i >= 0; i--) {
-        const ev = events.value[i];
-        if (ev && (ev.type === "spend" || ev.action?.type === "spend")) {
-          undoEvent(ev.id);
-          return;
-        }
-      }
-      const currentRound = round.value;
-      const startFunds = landlordStartingMoney.value;
-      const currentFunds = landlordMoney.value;
-      const newFunds = Math.min(startFunds, currentFunds + amount);
-      landlordMoney.value = newFunds;
-
-      const existing = tallies.value[currentRound];
-      const currentSpend = Math.max(0, (existing?.landlordSpending ?? 0) - amount);
-
-      if (existing) {
-        existing.landlordSpending = currentSpend > 0 ? currentSpend : null;
-        existing.landlordRemaining = newFunds;
-      } else {
-        syncCurrentRoundTally();
-        if (tallies.value[currentRound]) {
-          tallies.value[currentRound].landlordSpending = currentSpend > 0 ? currentSpend : null;
-          tallies.value[currentRound].landlordRemaining = newFunds;
-        }
-      }
-
-      updatedAt.value = Date.now();
-      persist();
     }
 
     function earnLandlordMoney(amount = 50000) {
@@ -437,12 +286,6 @@ export const useGameStore = defineStore(
       if (existing) {
         existing.landlordSpending = currentSpend > 0 ? currentSpend : null;
         existing.landlordRemaining = newFunds;
-      } else {
-        syncCurrentRoundTally();
-        if (tallies.value[currentRound]) {
-          tallies.value[currentRound].landlordSpending = currentSpend > 0 ? currentSpend : null;
-          tallies.value[currentRound].landlordRemaining = newFunds;
-        }
       }
 
       addEvent(formatEarnEventText(amount), "earn", undefined, {
@@ -450,8 +293,6 @@ export const useGameStore = defineStore(
         amount,
         round: currentRound,
       });
-      updatedAt.value = Date.now();
-      persist();
     }
 
     function addEvent(
@@ -462,9 +303,6 @@ export const useGameStore = defineStore(
     ) {
       const trimmed = text.trim();
       if (!trimmed) return;
-      if (!Array.isArray(events.value)) {
-        events.value = [];
-      }
       const formattedText = /^landlord\b/i.test(trimmed)
         ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
         : trimmed;
@@ -485,12 +323,10 @@ export const useGameStore = defineStore(
         ...(action ? { action } : {}),
       };
       events.value.push(newEvent);
-      updatedAt.value = Date.now();
-      persist();
     }
 
     function undoEvent(id?: string): boolean {
-      if (!Array.isArray(events.value) || events.value.length === 0) return false;
+      if (events.value.length === 0) return false;
       const targetId = id ?? events.value[events.value.length - 1]?.id;
       if (!targetId) return false;
 
@@ -573,173 +409,43 @@ export const useGameStore = defineStore(
             break;
           }
           case "connectCoalition": {
-            if (Array.isArray(coalitionConnections.value)) {
-              if (action.connectionId) {
-                coalitionConnections.value = coalitionConnections.value.filter(
-                  (c) => c.id !== action.connectionId,
-                );
-              } else if (action.sourceId && action.targetId) {
-                coalitionConnections.value = coalitionConnections.value.filter(
-                  (c) =>
-                    !(
-                      (c.sourceId === action.sourceId && c.targetId === action.targetId) ||
-                      (c.sourceId === action.targetId && c.targetId === action.sourceId)
-                    ),
-                );
-              }
+            if (action.connectionId) {
+              coalitionConnections.value = coalitionConnections.value.filter(
+                (c) => c.id !== action.connectionId,
+              );
+            } else if (action.sourceId && action.targetId) {
+              coalitionConnections.value = coalitionConnections.value.filter(
+                (c) =>
+                  !(
+                    (c.sourceId === action.sourceId && c.targetId === action.targetId) ||
+                    (c.sourceId === action.targetId && c.targetId === action.sourceId)
+                  ),
+              );
             }
             break;
           }
           default:
             break;
         }
-      } else {
-        // Fallback for events without action metadata:
-        if (event.type === "spend") {
-          const match = event.text.match(/(\d+(?:\.\d+)?)\s*([km])?/i);
-          if (match && match[1]) {
-            let amt = parseFloat(match[1]);
-            if (match[2]?.toLowerCase() === "k") amt *= 1_000;
-            else if (match[2]?.toLowerCase() === "m") amt *= 1_000_000;
-            if (amt > 0) {
-              landlordMoney.value += amt;
-              if (tallies.value[eventRound]) {
-                const currentSpend = (tallies.value[eventRound].landlordSpending ?? 0) - amt;
-                tallies.value[eventRound].landlordSpending = currentSpend > 0 ? currentSpend : null;
-              }
-              for (let r = eventRound; r <= round.value; r++) {
-                const tr = tallies.value[r];
-                if (tr) {
-                  tr.landlordRemaining = (tr.landlordRemaining ?? 0) + amt;
-                }
-              }
-            }
-          }
-        } else if (event.type === "earn") {
-          const match = event.text.match(/(\d+(?:\.\d+)?)\s*([km])?/i);
-          if (match && match[1]) {
-            let amt = parseFloat(match[1]);
-            if (match[2]?.toLowerCase() === "k") amt *= 1_000;
-            else if (match[2]?.toLowerCase() === "m") amt *= 1_000_000;
-            if (amt > 0) {
-              landlordMoney.value = Math.max(0, landlordMoney.value - amt);
-              if (tallies.value[eventRound]) {
-                const currentSpend = (tallies.value[eventRound].landlordSpending ?? 0) + amt;
-                tallies.value[eventRound].landlordSpending = currentSpend > 0 ? currentSpend : null;
-              }
-              for (let r = eventRound; r <= round.value; r++) {
-                const tr = tallies.value[r];
-                if (tr) {
-                  tr.landlordRemaining = Math.max(0, (tr.landlordRemaining ?? 0) - amt);
-                }
-              }
-            }
-          }
-        } else if (event.text.startsWith("Coalition formed:")) {
-          const names = event.text
-            .replace("Coalition formed:", "")
-            .split("+")
-            .map((s) => s.trim());
-          if (names.length === 2 && names[0] && names[1]) {
-            const b1 = buildings.value.find(
-              (b) => b.label.toLowerCase() === names[0]?.toLowerCase(),
-            );
-            const b2 = buildings.value.find(
-              (b) => b.label.toLowerCase() === names[1]?.toLowerCase(),
-            );
-            if (b1 && b2 && Array.isArray(coalitionConnections.value)) {
-              coalitionConnections.value = coalitionConnections.value.filter(
-                (c) =>
-                  !(
-                    (c.sourceId === b1.id && c.targetId === b2.id) ||
-                    (c.sourceId === b2.id && c.targetId === b1.id)
-                  ),
-              );
-            }
-          }
-        } else if (event.buildingId && event.text.includes("joined tenant union")) {
-          const building = buildings.value.find((b) => b.id === event.buildingId);
-          const tenant = building?.tenants.find((t) => t.inUnion && !t.isInstigator);
-          if (tenant) {
-            tenant.inUnion = false;
-          }
-        } else if (event.buildingId && event.text.includes("evicted")) {
-          const building = buildings.value.find((b) => b.id === event.buildingId);
-          const tenant = building?.tenants.find((t) => t.isEvicted);
-          if (tenant) {
-            tenant.isEvicted = false;
-            delete tenant.evictedRound;
-          }
-        }
       }
 
       events.value.splice(eventIndex, 1);
       syncAllRoundTallies();
-      updatedAt.value = Date.now();
-      persist();
       return true;
-    }
-
-    function removeEvent(id: string) {
-      undoEvent(id);
-    }
-
-    function clearEvents() {
-      events.value = [];
-      clearEventHistory();
-      updatedAt.value = Date.now();
-      persist();
-    }
-
-    function resetGame() {
-      const defaultMoney = calculateDefaultLandlordMoney(
-        buildingCount.value,
-        peoplePerBuilding.value,
-      );
-      const def = createDefaultState();
-      buildingCount.value = def.buildingCount;
-      peoplePerBuilding.value = def.peoplePerBuilding;
-      landlordStartingMoney.value = defaultMoney;
-      landlordMoney.value = defaultMoney;
-      personWidth.value = def.personWidth!;
-      personHeight.value = def.personHeight!;
-      personScale.value = def.personScale!;
-      isConfigured.value = false;
-      hasBegun.value = false;
-      canEdit.value = true;
-      buildings.value = [];
-      coalitionConnections.value = [];
-      round.value = 1;
-      phase.value = 1;
-      tallies.value = def.tallies;
-      events.value = [];
-      updatedAt.value = Date.now();
-      landlordPosition.value = { x: 82, y: 3 };
-      showLandlord.value = true;
-
-      try {
-        if (typeof localStorage !== "undefined") {
-          localStorage.removeItem(STORAGE_KEY);
-        }
-      } catch (e) {
-        console.error("Failed to remove from localStorage:", e);
-      }
     }
 
     function nextPhase() {
       if (phase.value === 3) {
-        syncCurrentRoundTally();
+        syncAllRoundTallies();
         phase.value = 1;
         round.value += 1;
         const newRound = round.value;
         if (!tallies.value[newRound]) {
-          syncCurrentRoundTally();
+          syncAllRoundTallies();
         }
       } else {
         phase.value = (phase.value + 1) as GamePhase;
       }
-      updatedAt.value = Date.now();
-      persist();
     }
 
     function prevPhase() {
@@ -750,15 +456,11 @@ export const useGameStore = defineStore(
       } else {
         phase.value = (phase.value - 1) as GamePhase;
       }
-      updatedAt.value = Date.now();
-      persist();
     }
 
     function setPhase(newPhase: GamePhase) {
       if (newPhase === phase.value) return;
       phase.value = newPhase;
-      updatedAt.value = Date.now();
-      persist();
     }
 
     function toggleUnion(buildingId: string, tenantId: string, join?: boolean) {
@@ -785,9 +487,7 @@ export const useGameStore = defineStore(
         });
       }
 
-      syncCurrentRoundTally();
-      updatedAt.value = Date.now();
-      persist();
+      syncAllRoundTallies();
     }
 
     function toggleEviction(buildingId: string, tenantId: string, evicted?: boolean) {
@@ -814,9 +514,7 @@ export const useGameStore = defineStore(
         });
       }
 
-      syncCurrentRoundTally();
-      updatedAt.value = Date.now();
-      persist();
+      syncAllRoundTallies();
     }
 
     function updateBuildingPosition(buildingId: string, x: number, y: number) {
@@ -824,101 +522,29 @@ export const useGameStore = defineStore(
       if (!building) return;
       building.x = x;
       building.y = y;
-      updatedAt.value = Date.now();
-      persist();
     }
 
     function updateBuildingPositions(updates: Array<{ id: string; x: number; y: number }>) {
-      let changed = false;
       for (const u of updates) {
         const building = buildings.value.find((b) => b.id === u.id);
         if (building) {
           building.x = u.x;
           building.y = u.y;
-          changed = true;
         }
       }
-      if (changed) {
-        updatedAt.value = Date.now();
-        persist();
-      }
     }
+
     function updateLandlordPosition(x: number, y: number) {
       landlordPosition.value = {
         x: Math.round(Math.max(1, Math.min(86, x)) * 10) / 10,
         y: Math.round(Math.max(1, Math.min(74, y)) * 10) / 10,
       };
-      updatedAt.value = Date.now();
-      persist();
-    }
-    function toggleShowLandlord() {
-      showLandlord.value = !showLandlord.value;
-      updatedAt.value = Date.now();
-      persist();
-    }
-    function setShowLandlord(val: boolean) {
-      if (showLandlord.value === val) return;
-      showLandlord.value = val;
-      updatedAt.value = Date.now();
-      persist();
     }
 
     function beginGame() {
-      canEdit.value = false;
       hasBegun.value = true;
-      updatedAt.value = Date.now();
-      persist();
-    }
-
-    function setHasBegun(val: boolean) {
-      hasBegun.value = val;
-      updatedAt.value = Date.now();
-      persist();
-    }
-
-    function updateTally(targetRound: number, patch: Partial<RoundTally>) {
-      const current = tallies.value[targetRound] ?? {
-        round: targetRound,
-        landlordSpending: null,
-        totalOrganized: 0,
-        evictions: 0,
-        buildingsOrganized: 0,
-      };
-      tallies.value[targetRound] = { ...current, ...patch };
-      updatedAt.value = Date.now();
-      persist();
-    }
-
-    function addRoundRow() {
-      const maxR = Math.max(round.value, ...Object.keys(tallies.value).map(Number));
-      const nextR = maxR + 1;
-      const bldgs = buildings.value;
-      const roundEvictions = bldgs.reduce(
-        (sum, b) =>
-          sum + b.tenants.filter((t) => t.isEvicted && (t.evictedRound ?? nextR) === nextR).length,
-        0,
-      );
-      const totalEvictions = bldgs.reduce(
-        (sum, b) =>
-          sum + b.tenants.filter((t) => t.isEvicted && (t.evictedRound ?? 1) <= nextR).length,
-        0,
-      );
-      const prevTotal = tallies.value[maxR]?.totalOrganized ?? 0;
-      const currentTotal = bldgs.reduce(
-        (sum, b) => sum + getBuildingUnionCount(b, coalitions.value),
-        0,
-      );
-      tallies.value[nextR] = {
-        round: nextR,
-        landlordSpending: null,
-        totalOrganized: currentTotal,
-        organizedChange: currentTotal - prevTotal,
-        evictions: roundEvictions,
-        totalEvictions,
-        buildingsOrganized: bldgs.filter((b) => isBuildingOrganized(b, coalitions.value)).length,
-      };
-      updatedAt.value = Date.now();
-      persist();
+      isEditBuildings.value = false;
+      isEditPosition.value = false;
     }
 
     function adjustBuildingTenants(
@@ -930,53 +556,48 @@ export const useGameStore = defineStore(
       const building = buildings.value.find((b) => b.id === buildingId);
       if (!building) return;
 
-      let modified = false;
-
-      if (typeof label === "string" && label.trim() && building.label !== label.trim()) {
+      if (typeof label === "string" && label.trim()) {
         building.label = label.trim();
-        modified = true;
       }
-      if (typeof color === "string" && color.trim() && building.color !== color.trim()) {
+      if (typeof color === "string" && color.trim()) {
         building.color = color.trim();
-        modified = true;
       }
 
       const clampedTarget = Math.max(1, Math.min(100, Math.floor(targetCount)));
       const currentCount = building.tenants.length;
 
-      if (clampedTarget !== currentCount) {
-        modified = true;
-        if (clampedTarget > currentCount) {
-          const needed = clampedTarget - currentCount;
-          for (let k = 0; k < needed; k++) {
-            const nextIdNumber = currentCount + k + 1;
-            building.tenants.push({
-              id: `t-${building.index}-${nextIdNumber}-${Date.now() % 10000}-${k}`,
-              buildingId,
-              variant: (building.index + nextIdNumber) % VARIANT_COUNT,
-              isInstigator: false,
-              inUnion: false,
-            });
-          }
-        } else {
-          const toRemove = currentCount - clampedTarget;
-          let removed = 0;
-          for (let i = building.tenants.length - 1; i >= 0 && removed < toRemove; i--) {
-            const t = building.tenants[i];
-            if (t && !t.isInstigator && !t.inUnion) {
-              building.tenants.splice(i, 1);
-              removed++;
-            }
-          }
-          for (let i = building.tenants.length - 1; i >= 0 && removed < toRemove; i--) {
-            const t = building.tenants[i];
-            if (t && !t.isInstigator) {
-              building.tenants.splice(i, 1);
-              removed++;
-            }
+      if (clampedTarget > currentCount) {
+        const needed = clampedTarget - currentCount;
+        for (let k = 0; k < needed; k++) {
+          const nextIdNumber = currentCount + k + 1;
+          building.tenants.push({
+            id: `t-${building.index}-${nextIdNumber}-${Date.now() % 10000}-${k}`,
+            buildingId,
+            variant: (building.index + nextIdNumber) % VARIANT_COUNT,
+            isInstigator: false,
+            inUnion: false,
+          });
+        }
+      } else if (clampedTarget < currentCount) {
+        const toRemove = currentCount - clampedTarget;
+        let removed = 0;
+        for (let i = building.tenants.length - 1; i >= 0 && removed < toRemove; i--) {
+          const t = building.tenants[i];
+          if (t && !t.isInstigator && !t.inUnion) {
+            building.tenants.splice(i, 1);
+            removed++;
           }
         }
+        for (let i = building.tenants.length - 1; i >= 0 && removed < toRemove; i--) {
+          const t = building.tenants[i];
+          if (t && !t.isInstigator) {
+            building.tenants.splice(i, 1);
+            removed++;
+          }
+        }
+      }
 
+      if (clampedTarget !== currentCount) {
         const bCount = buildings.value.length || buildingCount.value || 4;
         const maxTenants = Math.max(
           ...buildings.value.map((b) => b.tenants?.length || 0),
@@ -991,40 +612,9 @@ export const useGameStore = defineStore(
         }
         const sizing = calculateOptimalPersonSize(bCount, maxTenants, cW, cH);
         personWidth.value = sizing.personWidth;
-        personHeight.value = sizing.personHeight;
-        personScale.value = sizing.personScale;
       }
 
-      if (modified) {
-        syncCurrentRoundTally();
-        updatedAt.value = Date.now();
-        persist();
-      }
-    }
-
-    function updateBuilding(
-      buildingId: string,
-      updates: {
-        count?: number;
-        label?: string;
-        color?: string;
-      },
-    ) {
-      const building = buildings.value.find((b) => b.id === buildingId);
-      if (!building) return;
-
-      adjustBuildingTenants(
-        buildingId,
-        typeof updates.count === "number" ? updates.count : building.tenants.length,
-        updates.label,
-        updates.color,
-      );
-    }
-
-    function reorderBuildings(newOrder: Building[]) {
-      buildings.value = [...newOrder];
-      updatedAt.value = Date.now();
-      persist();
+      syncAllRoundTallies();
     }
 
     function connectCoalition(sourceId: string, targetId: string): boolean {
@@ -1033,10 +623,6 @@ export const useGameStore = defineStore(
       const sourceBuilding = bldgs.find((b) => b.id === sourceId);
       const targetBuilding = bldgs.find((b) => b.id === targetId);
       if (!sourceBuilding || !targetBuilding) return false;
-
-      if (!Array.isArray(coalitionConnections.value)) {
-        coalitionConnections.value = [];
-      }
 
       const existingIndex = coalitionConnections.value.findIndex(
         (c) =>
@@ -1064,71 +650,44 @@ export const useGameStore = defineStore(
           round: round.value,
         },
       );
-      syncCurrentRoundTally();
-      updatedAt.value = Date.now();
-      persist();
+      syncAllRoundTallies();
       return true;
     }
 
     function disconnectCoalition(connectionId: string) {
-      if (!Array.isArray(coalitionConnections.value)) return;
       const prevLen = coalitionConnections.value.length;
       coalitionConnections.value = coalitionConnections.value.filter((c) => c.id !== connectionId);
       if (coalitionConnections.value.length !== prevLen) {
-        syncCurrentRoundTally();
-        updatedAt.value = Date.now();
-        persist();
-      }
-    }
-
-    function disconnectPair(buildingIdA: string, buildingIdB: string) {
-      if (!Array.isArray(coalitionConnections.value)) return;
-      const prevLen = coalitionConnections.value.length;
-      coalitionConnections.value = coalitionConnections.value.filter(
-        (c) =>
-          !(
-            (c.sourceId === buildingIdA && c.targetId === buildingIdB) ||
-            (c.sourceId === buildingIdB && c.targetId === buildingIdA)
-          ),
-      );
-      if (coalitionConnections.value.length !== prevLen) {
-        syncCurrentRoundTally();
-        updatedAt.value = Date.now();
-        persist();
+        syncAllRoundTallies();
       }
     }
 
     function disconnectBuilding(buildingId: string) {
-      if (!Array.isArray(coalitionConnections.value)) return;
       const prevLen = coalitionConnections.value.length;
       coalitionConnections.value = coalitionConnections.value.filter(
         (c) => c.sourceId !== buildingId && c.targetId !== buildingId,
       );
       if (coalitionConnections.value.length !== prevLen) {
-        syncCurrentRoundTally();
-        updatedAt.value = Date.now();
-        persist();
+        syncAllRoundTallies();
       }
     }
 
     function undoLastCoalition(): boolean {
-      if (canUndoCoalitionHistory.value) {
-        undoCoalitionHistory();
-        if (canUndoEvent.value) {
-          undoEvent();
+      if (coalitionConnections.value.length === 0) return false;
+      const lastConn = coalitionConnections.value[coalitionConnections.value.length - 1];
+      for (let i = events.value.length - 1; i >= 0; i--) {
+        const e = events.value[i];
+        if (
+          e?.action?.type === "connectCoalition" &&
+          (e.action.connectionId === lastConn?.id ||
+            (e.action.sourceId === lastConn?.sourceId && e.action.targetId === lastConn?.targetId))
+        ) {
+          undoEvent(e.id);
+          return true;
         }
-        syncCurrentRoundTally();
-        updatedAt.value = Date.now();
-        persist();
-        return true;
-      }
-      if (!Array.isArray(coalitionConnections.value) || coalitionConnections.value.length === 0) {
-        return false;
       }
       coalitionConnections.value.pop();
-      syncCurrentRoundTally();
-      updatedAt.value = Date.now();
-      persist();
+      syncAllRoundTallies();
       return true;
     }
 
@@ -1139,8 +698,6 @@ export const useGameStore = defineStore(
       landlordStartingMoney,
       landlordMoney,
       personWidth,
-      personHeight,
-      personScale,
       isConfigured,
       hasBegun,
       buildings,
@@ -1149,44 +706,25 @@ export const useGameStore = defineStore(
       phase,
       tallies,
       events,
-      updatedAt,
-      canEdit,
-      isEditBuildings,
-      isEditPosition,
       landlordPosition,
       showLandlord,
+      isEditBuildings,
+      isEditPosition,
 
-      // Computed / Getters
-      state,
-      totalBuildings,
-      totalTenants,
-      currentPhaseInfo,
-      unionTenantsCount,
-      totalEvictionsCount,
-      organizedBuildingsCount,
-      canUndoLandlordSpend,
+      // Computed
       coalitions,
       buildingColorMap,
-      canUndoCoalition,
+      unionTenantsCount,
       coalitionTenantsCount,
-      eventsJson,
+      coalitionBuildingsCount,
+
       // Actions
-      persist,
-      reloadFromStorage,
-      toggleEditPosition,
-      toggleShowLandlord,
-      setShowLandlord,
-      syncCurrentRoundTally,
       setupGame,
       beginGame,
-      setHasBegun,
       spendLandlordMoney,
-      undoLandlordSpend,
       earnLandlordMoney,
       addEvent,
-      removeEvent,
-      clearEvents,
-      resetGame,
+      undoEvent,
       nextPhase,
       prevPhase,
       setPhase,
@@ -1195,40 +733,16 @@ export const useGameStore = defineStore(
       updateBuildingPosition,
       updateBuildingPositions,
       updateLandlordPosition,
-      updateTally,
-      addRoundRow,
       adjustBuildingTenants,
-      updateBuilding,
-      reorderBuildings,
       connectCoalition,
       disconnectCoalition,
-      disconnectPair,
       disconnectBuilding,
       undoLastCoalition,
-      undoEvent,
-      redoEvent,
-      canUndoEvent,
-      canRedoEvent,
-      syncAllRoundTallies,
     };
   },
   {
     persist: {
       key: STORAGE_KEY,
-      storage,
     },
   },
 );
-
-/**
- * Helper to ensure a Pinia instance is active before accessing the store.
- * Useful for tests or environments where app.use(pinia) hasn't run.
- */
-export function getGameStore() {
-  if (!getActivePinia()) {
-    const pinia = createPinia();
-    pinia.use(piniaPluginPersistedstate);
-    setActivePinia(pinia);
-  }
-  return useGameStore();
-}

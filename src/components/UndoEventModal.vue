@@ -8,7 +8,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from "reka-ui";
-import { Undo2, X } from "lucide-vue-next";
+import { Undo2, X, CornerDownLeft } from "lucide-vue-next";
+import { useEventListener } from "@vueuse/core";
 import type { GameEvent } from "../types/game";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
@@ -38,6 +39,35 @@ function handleConfirm() {
   }
   emit("close");
 }
+
+function handleOpenAutoFocus(event: Event) {
+  event.preventDefault();
+  const confirmBtn = document.querySelector(".btn-confirm") as HTMLElement | null;
+  if (confirmBtn) {
+    confirmBtn.focus();
+  }
+}
+
+function handleModalKeydown(e: KeyboardEvent) {
+  if (!props.show) return;
+
+  if (e.key === "Escape") {
+    e.preventDefault();
+    emit("close");
+    return;
+  }
+
+  if (e.key === "Enter" && !e.repeat && !e.isComposing) {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest(".modal-close-btn") || target?.closest(".btn-cancel")) {
+      return;
+    }
+    e.preventDefault();
+    handleConfirm();
+  }
+}
+
+useEventListener(window, "keydown", handleModalKeydown);
 </script>
 
 <template>
@@ -51,7 +81,7 @@ function handleConfirm() {
   >
     <DialogPortal>
       <DialogOverlay class="modal-backdrop" />
-      <DialogContent class="modal-dialog">
+      <DialogContent class="modal-dialog" @open-auto-focus="handleOpenAutoFocus">
         <RoughBox
           :stroke="'#292524'"
           :fill="'#fffdfa'"
@@ -73,6 +103,7 @@ function handleConfirm() {
               <button
                 type="button"
                 class="modal-close-btn"
+                title="Close (Esc)"
                 aria-label="Close"
                 @click="emit('close')"
               >
@@ -105,14 +136,40 @@ function handleConfirm() {
 
             <!-- Modal Footer -->
             <div class="modal-footer">
-              <RoughButton variant="secondary" :seed="856" @click="emit('close')">
-                <span>Cancel</span>
+              <RoughButton
+                variant="secondary"
+                :seed="856"
+                class="btn-cancel"
+                title="Cancel (Esc to close)"
+                aria-label="Cancel (Press Esc to close)"
+                @click="emit('close')"
+              >
+                <span class="btn-text">Cancel</span>
+                <kbd class="btn-kbd">
+                  <span class="kbd-text">Esc</span>
+                </kbd>
               </RoughButton>
 
-              <RoughButton variant="danger" :seed="857" @click="handleConfirm">
+              <RoughButton
+                variant="danger"
+                :seed="857"
+                class="btn-confirm"
+                title="Undo Action (Enter)"
+                aria-label="Undo Action (Press Enter)"
+                @click="handleConfirm"
+              >
                 <span class="undo-btn-content">
                   <Undo2 :size="14" :stroke-width="1.8" />
-                  <span>Undo Action</span>
+                  <span class="btn-text">Undo Action</span>
+                  <kbd class="btn-kbd btn-kbd-danger">
+                    <CornerDownLeft
+                      :size="11"
+                      :stroke-width="1.5"
+                      class="kbd-symbol"
+                      aria-hidden="true"
+                    />
+                    <span class="kbd-text">Enter</span>
+                  </kbd>
                 </span>
               </RoughButton>
             </div>
@@ -277,12 +334,57 @@ function handleConfirm() {
 
 .modal-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.75rem;
   border-top: 2px dashed #e7e5e4;
   padding-top: 0.75rem;
 }
 
+.btn-cancel,
+.btn-confirm {
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #523e2b;
+  background-color: #fbf7ef;
+  border: 1px solid #a89a86;
+  border-radius: 4px;
+  box-shadow: 0 1px 0 #8c7e6c;
+  line-height: 1.2;
+  user-select: none;
+  vertical-align: middle;
+}
+
+.btn-kbd-danger {
+  color: #7f1d1d;
+  background-color: #fef2f2;
+  border-color: #fca5a5;
+  box-shadow: 0 1px 0 #ef4444;
+}
+
+.kbd-symbol {
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.kbd-text {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
 .undo-btn-content {
   display: inline-flex;
   align-items: center;

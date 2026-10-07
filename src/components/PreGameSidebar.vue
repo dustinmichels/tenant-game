@@ -46,17 +46,20 @@ const emit = defineEmits<{
           </div>
 
           <div class="pregame-actions">
-            <RoughButton
-              variant="primary"
-              :seed="715"
-              class="btn-begin"
-              title="Begin game"
-              aria-label="Begin game"
-              @click="emit('begin')"
-            >
-              <span class="btn-text">Begin</span>
-              <ArrowRight :size="16" :stroke-width="2.2" class="btn-arrow" aria-hidden="true" />
-            </RoughButton>
+            <div class="btn-begin-wrapper">
+              <RoughButton
+                variant="success"
+                :seed="715"
+                :stroke-width="1.8"
+                class="btn-begin"
+                title="Begin game"
+                aria-label="Begin game"
+                @click="emit('begin')"
+              >
+                <span class="btn-text">Begin</span>
+                <ArrowRight :size="16" :stroke-width="2.2" class="btn-arrow" aria-hidden="true" />
+              </RoughButton>
+            </div>
           </div>
         </div>
       </RoughBox>
@@ -164,6 +167,51 @@ const emit = defineEmits<{
   margin-top: 4px;
 }
 
+.btn-begin-wrapper {
+  display: flex;
+  width: 100%;
+  transform-origin: center center;
+  animation: jiggle 2.2s ease-in-out infinite;
+}
+
+.btn-begin-wrapper:hover {
+  animation-play-state: paused;
+}
+
+@keyframes jiggle {
+  0%,
+  45%,
+  100% {
+    transform: rotate(0deg) translate3d(0, 0, 0);
+  }
+  50% {
+    transform: rotate(-1.8deg) translate3d(-1px, 0.5px, 0);
+  }
+  57% {
+    transform: rotate(1.8deg) translate3d(1px, -0.5px, 0);
+  }
+  64% {
+    transform: rotate(-1.2deg) translate3d(-0.8px, 0.5px, 0);
+  }
+  71% {
+    transform: rotate(1.2deg) translate3d(0.8px, -0.5px, 0);
+  }
+  78% {
+    transform: rotate(-0.6deg) translate3d(-0.4px, 0, 0);
+  }
+  85% {
+    transform: rotate(0.6deg) translate3d(0.4px, 0, 0);
+  }
+  92% {
+    transform: rotate(0deg) translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-begin-wrapper {
+    animation: none;
+  }
+}
 .btn-begin {
   width: 100%;
   display: flex;

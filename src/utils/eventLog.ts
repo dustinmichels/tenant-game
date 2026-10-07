@@ -22,6 +22,30 @@ export function isEarnEvent(event: GameEvent | { text: string; type?: string }):
   return isEarnEventText(event.text);
 }
 
+export function formatSpendEventText(amount: number): string {
+  if (amount >= 1_000_000 && amount % 1_000_000 === 0) {
+    return `Landlord spends ${amount / 1_000_000}m`;
+  }
+  if (amount >= 1_000 && amount % 1_000 === 0) {
+    return `Landlord spends ${amount / 1_000}k`;
+  }
+  return `Landlord spends $${amount.toLocaleString()}`;
+}
+
+export function formatEarnEventText(amount: number): string {
+  if (amount >= 1_000_000 && amount % 1_000_000 === 0) {
+    return `Landlord earns ${amount / 1_000_000}m`;
+  }
+  if (amount >= 1_000 && amount % 1_000 === 0) {
+    return `Landlord earns ${amount / 1_000}k`;
+  }
+  return `Landlord earns $${amount.toLocaleString()}`;
+}
+
+export function formatDiceRollEventText(total: number): string {
+  return `🎲 Group rolled ${total}`;
+}
+
 export interface EventTextSegment {
   text: string;
   isBuilding: boolean;

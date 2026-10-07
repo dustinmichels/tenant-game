@@ -8,12 +8,14 @@ const props = withDefaults(
     disabled?: boolean;
     type?: "button" | "submit" | "reset";
     seed?: number;
+    strokeWidth?: number;
   }>(),
   {
     variant: "secondary",
     disabled: false,
     type: "button",
     seed: undefined,
+    strokeWidth: undefined,
   },
 );
 
@@ -104,7 +106,7 @@ function handleClick(e: MouseEvent) {
       :fill-style="buttonColors.fillStyle"
       :roughness="1.3"
       :bowing="1.1"
-      :stroke-width="variant === 'primary' ? 1.8 : 1.4"
+      :stroke-width="strokeWidth ?? (variant === 'primary' ? 1.8 : 1.4)"
       :seed="seed"
       class="rough-btn-box"
     >

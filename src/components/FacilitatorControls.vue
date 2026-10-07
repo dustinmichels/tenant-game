@@ -6,7 +6,7 @@ import type { GamePhase } from "../types/game";
 import RoughButton from "./RoughButton.vue";
 import RoundTracker from "./RoundTracker.vue";
 import DiceRollModal from "./DiceRollModal.vue";
-import { formatDiceRollEventText } from "../stores/game";
+import { formatDiceRollEventText } from "../utils/eventLog";
 import { roughGen } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
 

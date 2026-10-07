@@ -25,6 +25,7 @@ const props = withDefaults(
     coalitions?: CoalitionGroup[];
     canMove?: boolean;
     editBuildings?: boolean;
+    hasBegun?: boolean;
   }>(),
   {
     effectiveColor: undefined,
@@ -38,6 +39,7 @@ const props = withDefaults(
     coalitions: () => [],
     canMove: true,
     editBuildings: undefined,
+    hasBegun: true,
   },
 );
 const emit = defineEmits<{
@@ -50,15 +52,18 @@ const buildingSeed = computed(() =>
   createSeed(`building_${props.building.id}_${props.building.index}`),
 );
 const effectiveUnionCount = computed(() => {
+  if (!props.hasBegun) return 0;
   if (props.unionCount !== undefined) return props.unionCount;
   return getBuildingUnionCount(props.building, props.coalitions);
 });
-const isOrganized = computed(() =>
-  props.isOrganized !== undefined
+const isOrganized = computed(() => {
+  if (!props.hasBegun) return false;
+  return props.isOrganized !== undefined
     ? props.isOrganized
-    : isBuildingOrganized(props.building, props.coalitions),
-);
+    : isBuildingOrganized(props.building, props.coalitions);
+});
 const activeColor = computed(() => props.effectiveColor || props.building.color);
+const outlineColor = computed(() => (isOrganized.value ? activeColor.value : "#3f382f"));
 
 const buildingNumber = computed(() => {
   if (typeof props.building.index === "number" && !isNaN(props.building.index)) {
@@ -72,10 +77,12 @@ const buildingNumber = computed(() => {
 const barTextColor = computed(() => getContrastTextColor(activeColor.value));
 
 function handlePointerDownSpool(e: PointerEvent) {
+  if (!props.hasBegun) return;
   if (e.button !== 0) return;
   emit("start-thread", props.building, e);
 }
 function handleTenantClick(e: MouseEvent, tenant: Tenant) {
+  if (!props.hasBegun) return;
   emit("tenant-select", { event: e, tenant, building: props.building });
 }
 
@@ -170,18 +177,26 @@ const roofPaths = computed<PathInfo[]>(() => {
       :class="{
         'is-connected': isInCoalition,
         'is-active-source': isConnectingSource,
+        'is-disabled': !hasBegun,
       }"
+      :disabled="!hasBegun"
       :style="{
-        borderColor: activeColor,
-        backgroundColor: isInCoalition ? activeColor : '#fffdfa',
-        color: isInCoalition ? '#ffffff' : activeColor,
+        borderColor: hasBegun ? activeColor : '#d1c7b7',
+        backgroundColor: !hasBegun ? '#f4ece1' : isInCoalition ? activeColor : '#fffdfa',
+        color: !hasBegun ? '#a89f91' : isInCoalition ? '#ffffff' : activeColor,
       }"
       :title="
-        isInCoalition
-          ? `${building.label} is in a coalition (${coalitionNames || 'Connected'}). Drag thread to connect another building!`
-          : `Coalition: Click and drag thread to connect ${building.label} with another building`
+        !hasBegun
+          ? 'Coalitions cannot be formed during setup'
+          : isInCoalition
+            ? `${building.label} is in a coalition (${coalitionNames || 'Connected'}). Drag thread to connect another building!`
+            : `Coalition: Click and drag thread to connect ${building.label} with another building`
       "
-      :aria-label="`Connect coalition thread from ${building.label}`"
+      :aria-label="
+        !hasBegun
+          ? 'Coalitions disabled during setup'
+          : `Connect coalition thread from ${building.label}`
+      "
       @pointerdown.stop="handlePointerDownSpool"
     >
       <Cable :size="14" :stroke-width="1.5" class="spool-icon" aria-hidden="true" />
@@ -202,12 +217,12 @@ const roofPaths = computed<PathInfo[]>(() => {
       </button>
     </transition>
     <RoughBox
-      :stroke="activeColor"
+      :stroke="outlineColor"
       :fill="'#f5efe4'"
       fill-style="solid"
       :roughness="0.7"
       :bowing="0.5"
-      :stroke-width="2"
+      :stroke-width="isOrganized ? 2.5 : 2"
       :seed="buildingSeed"
       class="building-rough-box"
     >
@@ -248,7 +263,9 @@ const roofPaths = computed<PathInfo[]>(() => {
               :title="
                 isInCoalition
                   ? `Coalition Color: ${activeColor}`
-                  : `Instigator Color: ${activeColor}`
+                  : hasBegun
+                    ? `Instigator Color: ${activeColor}`
+                    : `Building Color: ${activeColor}`
               "
             />
             <span class="status-ratio-text">
@@ -264,7 +281,7 @@ const roofPaths = computed<PathInfo[]>(() => {
           <span
             v-if="isOrganized"
             class="status-organized-flag"
-            title="Building is organized (majority in union)"
+            title="Building is organized (2+ in union)"
           >
             ✊ Org
           </span>
@@ -283,10 +300,11 @@ const roofPaths = computed<PathInfo[]>(() => {
             :variant="tenant.variant"
             :label="`${building.label} • Resident ${idx + 1}`"
             :seed="buildingSeed + 100 + idx * 7"
-            :color="tenant.inUnion || tenant.isInstigator ? activeColor : undefined"
-            :is-instigator="tenant.isInstigator"
-            :in-union="tenant.inUnion"
-            :is-evicted="tenant.isEvicted"
+            :color="hasBegun && (tenant.inUnion || tenant.isInstigator) ? activeColor : undefined"
+            :is-instigator="hasBegun && Boolean(tenant.isInstigator)"
+            :in-union="hasBegun && Boolean(tenant.inUnion)"
+            :is-evicted="hasBegun && Boolean(tenant.isEvicted)"
+            :has-begun="hasBegun"
             @select="handleTenantClick($event, tenant)"
             @contextmenu="handleTenantClick($event, tenant)"
           />
@@ -408,6 +426,21 @@ const roofPaths = computed<PathInfo[]>(() => {
   pointer-events: none;
 }
 
+.coalition-pin-btn:disabled,
+.coalition-pin-btn.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.coalition-pin-btn:disabled:hover,
+.coalition-pin-btn.is-disabled:hover {
+  transform: none;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
 /* Building Bottom Bar */
 .building-bottom-bar {
   display: flex;
@@ -509,6 +542,17 @@ const roofPaths = computed<PathInfo[]>(() => {
 .building-rough-box {
   width: 100%;
   height: 100%;
+  transition: filter 0.25s ease;
+}
+
+.building-card-wrapper.is-building-organized .building-rough-box {
+  filter: drop-shadow(0 0 2.5px var(--building-accent)) drop-shadow(0 0 7px var(--building-accent))
+    drop-shadow(0 0 14px color-mix(in srgb, var(--building-accent) 55%, transparent));
+}
+
+.building-card-wrapper.is-building-organized:hover .building-rough-box {
+  filter: drop-shadow(0 0 3px var(--building-accent)) drop-shadow(0 0 9px var(--building-accent))
+    drop-shadow(0 0 18px color-mix(in srgb, var(--building-accent) 65%, transparent));
 }
 
 .building-card-inner {

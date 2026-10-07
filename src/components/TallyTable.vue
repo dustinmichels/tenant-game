@@ -11,6 +11,7 @@ import {
   getBuildingUnionCount,
   getTotalUnionCount,
   getCoalitionUnionCount,
+  getCoalitionBuildingCount,
 } from "../utils/coalitions";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
@@ -234,8 +235,8 @@ const totalTenants = computed(() => props.buildings.reduce((sum, b) => sum + b.t
 // Counting unions rule: at least 2 people needed to count as a union (standalone or via coalition)
 const unionTenantsCount = computed(() => getTotalUnionCount(props.buildings, props.coalitions));
 
-const coalitionTenantsCount = computed(() =>
-  getCoalitionUnionCount(props.buildings, props.coalitions),
+const coalitionBuildingsCount = computed(() =>
+  getCoalitionBuildingCount(props.buildings, props.coalitions),
 );
 
 const unionPercent = computed(() => {
@@ -244,8 +245,8 @@ const unionPercent = computed(() => {
 });
 
 const coalitionPercent = computed(() => {
-  if (totalTenants.value <= 0) return 0;
-  return Math.round((coalitionTenantsCount.value / totalTenants.value) * 100);
+  if (buildingCount.value <= 0) return 0;
+  return Math.round((coalitionBuildingsCount.value / buildingCount.value) * 100);
 });
 
 const totalEvictionsCount = computed(() =>
@@ -572,9 +573,9 @@ const eventSegmentsMap = computed(() => {
           >
             <div
               class="metric-pill union"
-              :title="`${unionTenantsCount} of ${totalTenants} tenants in union (${unionPercent}%)`"
+              :title="`${unionTenantsCount} of ${totalTenants} people in union (${unionPercent}%)`"
             >
-              <span class="metric-label">In Union</span>
+              <span class="metric-label">Ppl in Union</span>
               <div class="metric-value-row">
                 <span class="metric-value">{{ unionTenantsCount }}</span>
                 <span class="metric-percent">({{ unionPercent }}%)</span>
@@ -593,11 +594,11 @@ const eventSegmentsMap = computed(() => {
           >
             <div
               class="metric-pill coalition"
-              :title="`${coalitionTenantsCount} of ${totalTenants} tenants in coalition (${coalitionPercent}%)`"
+              :title="`${coalitionBuildingsCount} of ${buildingCount} buildings in coalition (${coalitionPercent}%)`"
             >
-              <span class="metric-label">In Coalition</span>
+              <span class="metric-label">Blgs in Coalition</span>
               <div class="metric-value-row">
-                <span class="metric-value">{{ coalitionTenantsCount }}</span>
+                <span class="metric-value">{{ coalitionBuildingsCount }}</span>
                 <span class="metric-percent">({{ coalitionPercent }}%)</span>
               </div>
             </div>
@@ -701,9 +702,9 @@ const eventSegmentsMap = computed(() => {
 }
 
 .metric-label {
-  font-size: 8.5px;
+  font-size: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.25px;
   color: #78716c;
   font-weight: 700;
   line-height: 1.1;

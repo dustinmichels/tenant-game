@@ -8,12 +8,6 @@ import {
   fixupHueLonger,
 } from "culori";
 
-export interface OklchColor {
-  l: number; // 0..1 (perceptual lightness)
-  c: number; // >= 0 (chroma / saturation)
-  h: number; // 0..360 (hue angle in degrees)
-}
-
 export interface PaletteOptions {
   baseHue?: number;
   lightness?: number;
@@ -164,7 +158,7 @@ export function getRandomPrimaryColor(family?: PrimaryFamily): string {
  * 3. Colors are randomized each time so buildings do not look identical on consecutive runs.
  * 4. Combines cleanly into vibrant secondary colors (Orange, Green, Purple).
  */
-export function generatePrimaryPalette(count: number, options: PaletteOptions = {}): string[] {
+function generatePrimaryPalette(count: number, options: PaletteOptions = {}): string[] {
   if (count <= 0) return [];
 
   if (options.deterministic) {
@@ -263,20 +257,12 @@ function oklchToHex(l: number, c: number, h: number): string {
   return formatHex(inGamut) ?? DEFAULT_COLOR;
 }
 
-/**
- * Converts any supported CSS color string to OKLCH using culori.
- */
-export function colorToOklch(color: string): OklchColor {
-  const lch = oklch(color) ?? { mode: "oklch", l: 0.5, c: 0, h: 0 };
-  return { l: lch.l ?? 0, c: lch.c ?? 0, h: lch.h ?? 0 };
-}
-
 const deltaEOklab = differenceEuclidean("oklab");
 
 /**
  * Calculates the perceptual color distance (Delta E) in OKLab space using culori.
  */
-export function colorDistance(color1: string, color2: string): number {
+function colorDistance(color1: string, color2: string): number {
   return deltaEOklab(color1, color2) ?? 0;
 }
 
@@ -340,12 +326,7 @@ export function getBuildingStartingColor(
  * Ensures primary pairs blend into their expected secondary colors (e.g., Yellow + Blue -> Green,
  * rather than crossing the magenta/red boundary). Always clamps chroma to prevent sRGB clipping distortion.
  */
-export function combineTwoColors(
-  colorA: string,
-  colorB: string,
-  weightA = 0.5,
-  weightB = 0.5,
-): string {
+function combineTwoColors(colorA: string, colorB: string, weightA = 0.5, weightB = 0.5): string {
   const cA = oklch(colorA);
   const cB = oklch(colorB);
 
@@ -379,7 +360,12 @@ export function combineTwoColors(
   }
 
   try {
-    const it = interpolate([colorA, colorB], "oklch", overrides);
+    // @types/culori requires all channel keys (l, c, h) for partial overrides
+    const it = interpolate(
+      [colorA, colorB],
+      "oklch",
+      overrides as unknown as Parameters<typeof interpolate>[2],
+    );
     const blended = it(t);
     const inGamut = clampChroma(blended, "oklch");
     return formatHex(inGamut) ?? DEFAULT_COLOR;
@@ -439,7 +425,7 @@ function weightedAverageOklch(colors: string[], weights: number[]): string {
  * For 2 colors, uses combineTwoColors with the intentional subtractive hue path.
  * For 3+ colors, computes an order-independent weighted circular average in OKLCH space.
  */
-export function mergeColors(colors: string[], weights?: number[]): string {
+function mergeColors(colors: string[], weights?: number[]): string {
   if (!colors || colors.length === 0) return DEFAULT_COLOR;
   if (colors.length === 1) return colors[0]!;
 

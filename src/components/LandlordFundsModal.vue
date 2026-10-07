@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, useTemplateRef } from "vue";
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent, DialogTitle } from "reka-ui";
 import { Building2, Banknote, Coins, X } from "lucide-vue-next";
+import { useEventListener } from "@vueuse/core";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
 import { formatCurrency, formatCompactCurrency, parseCustomAmount } from "../utils/currency";
@@ -91,6 +92,23 @@ function handleEnterKey(e: KeyboardEvent) {
     }
   }
 }
+
+function handleOpenAutoFocus(event: Event) {
+  event.preventDefault();
+  customInputRef.value?.focus();
+}
+
+function handleModalKeydown(e: KeyboardEvent) {
+  if (!props.show) return;
+
+  if (e.key === "Escape") {
+    e.preventDefault();
+    emit("close");
+    return;
+  }
+}
+
+useEventListener(window, "keydown", handleModalKeydown);
 </script>
 
 <template>
@@ -104,7 +122,7 @@ function handleEnterKey(e: KeyboardEvent) {
   >
     <DialogPortal>
       <DialogOverlay class="modal-backdrop" />
-      <DialogContent class="modal-dialog">
+      <DialogContent class="modal-dialog" @open-auto-focus="handleOpenAutoFocus">
         <RoughBox
           :stroke="'#78350f'"
           :fill="'#fefdfb'"
@@ -126,8 +144,8 @@ function handleEnterKey(e: KeyboardEvent) {
               <button
                 type="button"
                 class="modal-close-btn"
-                title="Close modal"
-                aria-label="Close modal"
+                title="Close (Esc)"
+                aria-label="Close"
                 @click="emit('close')"
               >
                 <X :size="16" :stroke-width="1.5" />
@@ -257,10 +275,15 @@ function handleEnterKey(e: KeyboardEvent) {
               <RoughButton
                 variant="ghost"
                 :seed="945"
-                title="Cancel and close modal"
+                class="btn-cancel"
+                title="Cancel (Esc to close)"
+                aria-label="Cancel (Press Esc to close)"
                 @click="emit('close')"
               >
-                <span>Cancel</span>
+                <span class="btn-text">Cancel</span>
+                <kbd class="btn-kbd">
+                  <span class="kbd-text">Esc</span>
+                </kbd>
               </RoughButton>
             </div>
           </div>
@@ -493,8 +516,41 @@ function handleEnterKey(e: KeyboardEvent) {
 
 .modal-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   border-top: 1.5px dashed #e7e5e4;
   padding-top: 12px;
+}
+
+.btn-cancel {
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #523e2b;
+  background-color: #fbf7ef;
+  border: 1px solid #a89a86;
+  border-radius: 4px;
+  box-shadow: 0 1px 0 #8c7e6c;
+  line-height: 1.2;
+  user-select: none;
+  vertical-align: middle;
+}
+
+.kbd-text {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }
 </style>
