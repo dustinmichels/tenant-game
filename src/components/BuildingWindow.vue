@@ -1,79 +1,87 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { roughGen } from '../utils/rough'
-import type { PathInfo } from '../utils/rough'
-import TenantSilhouette from './TenantSilhouette.vue'
+import { computed } from "vue";
+import { roughGen } from "../utils/rough";
+import type { PathInfo } from "../utils/rough";
+import TenantSilhouette from "./TenantSilhouette.vue";
 
 const props = withDefaults(
   defineProps<{
-    variant?: number
-    label?: string
-    seed?: number
+    variant?: number;
+    label?: string;
+    seed?: number;
+    color?: string;
+    isInstigator?: boolean;
+    inUnion?: boolean;
+    isEvicted?: boolean;
   }>(),
   {
     variant: 0,
-    label: 'Resident',
+    label: "Resident",
     seed: undefined,
+    color: undefined,
+    isInstigator: false,
+    inUnion: false,
+    isEvicted: false,
   },
-)
+);
 
-const windowSeed = computed(() => props.seed ?? 101)
+const emit = defineEmits<{
+  (e: "select", event: MouseEvent): void;
+}>();
+
+const windowSeed = computed(() => props.seed ?? 101);
 
 const windowPaths = computed<PathInfo[]>(() => {
-  const s = windowSeed.value
-  const frame = roughGen.rectangle(3, 4, 44, 54, {
-    roughness: 0.9,
-    stroke: '#786957',
-    strokeWidth: 1.2,
-    fill: '#fffdfa',
-    fillStyle: 'solid',
+  const s = windowSeed.value;
+  // Streamlined minimal window frame matching 0.68 aspect ratio
+  const frame = roughGen.rectangle(1.5, 1.5, 33, 46.5, {
+    roughness: 0.45,
+    stroke: "#786957",
+    strokeWidth: 1.0,
+    fill: "#fffdfa",
+    fillStyle: "solid",
     seed: s,
-  })
+  });
 
-  const lintel = roughGen.rectangle(1, 1, 48, 4, {
-    roughness: 0.8,
-    stroke: '#5c4f3d',
-    strokeWidth: 1.1,
-    fill: '#a89780',
-    fillStyle: 'solid',
+  // Subtle clean sill line
+  const sill = roughGen.line(0, 49.5, 36, 49.5, {
+    roughness: 0.35,
+    stroke: "#5c4f3d",
+    strokeWidth: 1.2,
     seed: s + 1,
-  })
+  });
 
-  const sill = roughGen.rectangle(0, 58, 50, 4, {
-    roughness: 0.8,
-    stroke: '#5c4f3d',
-    strokeWidth: 1.1,
-    fill: '#a89780',
-    fillStyle: 'solid',
-    seed: s + 2,
-  })
+  return [frame, sill].flatMap((d) => roughGen.toPaths(d));
+});
 
-  const crossH = roughGen.line(4, 28, 46, 28, {
-    roughness: 0.6,
-    stroke: '#d9cdbd',
-    strokeWidth: 0.8,
-    seed: s + 3,
-  })
-
-  const crossV = roughGen.line(25, 5, 25, 57, {
-    roughness: 0.6,
-    stroke: '#d9cdbd',
-    strokeWidth: 0.8,
-    seed: s + 4,
-  })
-
-  return [frame, lintel, sill, crossH, crossV].flatMap((d) => roughGen.toPaths(d))
-})
+const tooltip = computed(() => {
+  const status = props.isEvicted
+    ? "Evicted"
+    : props.isInstigator
+      ? "Union Instigator"
+      : props.inUnion
+        ? "Union Member"
+        : "Resident";
+  return `${props.label} (${status}) — Click for actions`;
+});
 </script>
 
 <template>
-  <div class="building-window" :title="label">
+  <div
+    class="building-window"
+    :class="{
+      'is-instigator': isInstigator,
+      'is-union': inUnion,
+      'is-evicted': isEvicted,
+    }"
+    :title="tooltip"
+    role="button"
+    tabindex="0"
+    @click="emit('select', $event)"
+    @contextmenu.prevent="emit('select', $event)"
+  >
     <!-- Sketched rough window frame -->
-    <svg
-      viewBox="0 0 50 64"
-      class="window-svg-frame"
-      aria-hidden="true"
-    >
+    <svg viewBox="0 0 36 53" class="window-svg-frame" aria-hidden="true">
       <path
         v-for="(p, idx) in windowPaths"
         :key="idx"
@@ -90,6 +98,10 @@ const windowPaths = computed<PathInfo[]>(() => {
         :variant="variant"
         :label="label"
         :seed="seed"
+        :color="color"
+        :is-instigator="isInstigator"
+        :in-union="inUnion"
+        :is-evicted="isEvicted"
       />
     </div>
   </div>
@@ -98,12 +110,11 @@ const windowPaths = computed<PathInfo[]>(() => {
 <style scoped>
 .building-window {
   position: relative;
-  aspect-ratio: 0.78;
+  aspect-ratio: 0.68;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 58px;
-  max-height: 104px;
+  cursor: context-menu;
 }
 
 .window-svg-frame {
@@ -118,16 +129,25 @@ const windowPaths = computed<PathInfo[]>(() => {
 .window-pane-interior {
   position: relative;
   z-index: 1;
-  width: 78%;
-  height: 78%;
+  width: 90%;
+  height: 92%;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding-bottom: 2px;
+  padding-bottom: 1px;
+  border-radius: 2px;
+  transition: background-color 0.2s ease;
 }
 
 .building-window:hover .window-pane-interior {
-  background: radial-gradient(circle, rgba(254, 243, 199, 0.4) 0%, transparent 70%);
-  border-radius: 4px;
+  background: radial-gradient(circle, rgba(254, 243, 199, 0.5) 0%, transparent 75%);
+}
+
+.building-window.is-union .window-pane-interior {
+  background: radial-gradient(circle, rgba(254, 240, 138, 0.25) 0%, transparent 80%);
+}
+
+.building-window.is-instigator .window-pane-interior {
+  background: radial-gradient(circle, rgba(253, 224, 71, 0.35) 0%, transparent 80%);
 }
 </style>

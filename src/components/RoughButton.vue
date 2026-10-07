@@ -1,74 +1,81 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import RoughBox from './RoughBox.vue'
+import { ref, computed } from "vue";
+import RoughBox from "./RoughBox.vue";
 
 const props = withDefaults(
   defineProps<{
-    variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
-    disabled?: boolean
-    type?: 'button' | 'submit' | 'reset'
-    seed?: number
+    variant?: "primary" | "secondary" | "danger" | "warning" | "ghost";
+    disabled?: boolean;
+    type?: "button" | "submit" | "reset";
+    seed?: number;
   }>(),
   {
-    variant: 'secondary',
+    variant: "secondary",
     disabled: false,
-    type: 'button',
+    type: "button",
     seed: undefined,
   },
-)
+);
 
 const emit = defineEmits<{
-  (e: 'click', event: MouseEvent): void
-}>()
+  (e: "click", event: MouseEvent): void;
+}>();
 
-const isHovered = ref(false)
+const isHovered = ref(false);
 
 const buttonColors = computed(() => {
   if (props.disabled) {
     return {
-      stroke: '#a1a1aa',
-      fill: '#f4f4f5',
-      fillStyle: 'solid' as const,
-      textColor: '#a1a1aa',
-    }
+      stroke: "#a1a1aa",
+      fill: "#f4f4f5",
+      fillStyle: "solid" as const,
+      textColor: "#a1a1aa",
+    };
   }
 
   switch (props.variant) {
-    case 'primary':
+    case "primary":
       return {
-        stroke: isHovered.value ? '#18181b' : '#27272a',
-        fill: isHovered.value ? '#e4d5bc' : '#ede2cf',
-        fillStyle: 'solid' as const,
-        textColor: '#1c1917',
-      }
-    case 'danger':
+        stroke: isHovered.value ? "#18181b" : "#27272a",
+        fill: isHovered.value ? "#e4d5bc" : "#ede2cf",
+        fillStyle: "solid" as const,
+        textColor: "#1c1917",
+      };
+    case "danger":
       return {
-        stroke: isHovered.value ? '#991b1b' : '#b91c1c',
-        fill: isHovered.value ? '#fee2e2' : '#fef2f2',
-        fillStyle: 'solid' as const,
-        textColor: isHovered.value ? '#7f1d1d' : '#991b1b',
-      }
-    case 'ghost':
+        stroke: isHovered.value ? "#991b1b" : "#b91c1c",
+        fill: isHovered.value ? "#fee2e2" : "#fef2f2",
+        fillStyle: "solid" as const,
+        textColor: isHovered.value ? "#7f1d1d" : "#991b1b",
+      };
+    case "warning":
       return {
-        stroke: isHovered.value ? '#71717a' : 'transparent',
-        fill: isHovered.value ? '#f4f4f5' : undefined,
-        fillStyle: 'solid' as const,
-        textColor: '#3f3f46',
-      }
-    case 'secondary':
+        stroke: isHovered.value ? "#92400e" : "#b45309",
+        fill: isHovered.value ? "#fde68a" : "#fef3c7",
+        fillStyle: "solid" as const,
+        textColor: isHovered.value ? "#78350f" : "#92400e",
+      };
+    case "ghost":
+      return {
+        stroke: isHovered.value ? "#71717a" : "transparent",
+        fill: isHovered.value ? "#f4f4f5" : undefined,
+        fillStyle: "solid" as const,
+        textColor: "#3f3f46",
+      };
+    case "secondary":
     default:
       return {
-        stroke: isHovered.value ? '#27272a' : '#52525b',
-        fill: isHovered.value ? '#fbf8f2' : '#ffffff',
-        fillStyle: 'solid' as const,
-        textColor: '#27272a',
-      }
+        stroke: isHovered.value ? "#27272a" : "#52525b",
+        fill: isHovered.value ? "#fbf8f2" : "#ffffff",
+        fillStyle: "solid" as const,
+        textColor: "#27272a",
+      };
   }
-})
+});
 
 function handleClick(e: MouseEvent) {
   if (!props.disabled) {
-    emit('click', e)
+    emit("click", e);
   }
 }
 </script>

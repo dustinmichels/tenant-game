@@ -1,26 +1,26 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { roughGen } from '../utils/rough'
-import type { PathInfo } from '../utils/rough'
+import { ref, computed, onMounted, onUnmounted } from "vue";
+import { roughGen } from "../utils/rough";
+import type { PathInfo } from "../utils/rough";
 
 const props = withDefaults(
   defineProps<{
-    stroke?: string
-    fill?: string
-    fillStyle?: 'hachure' | 'solid' | 'zigzag' | 'cross-hatch' | 'dots' | 'dashed'
-    roughness?: number
-    bowing?: number
-    strokeWidth?: number
-    seed?: number
-    paddingOffset?: number
-    hachureAngle?: number
-    hachureGap?: number
-    fillWeight?: number
+    stroke?: string;
+    fill?: string;
+    fillStyle?: "hachure" | "solid" | "zigzag" | "cross-hatch" | "dots" | "dashed";
+    roughness?: number;
+    bowing?: number;
+    strokeWidth?: number;
+    seed?: number;
+    paddingOffset?: number;
+    hachureAngle?: number;
+    hachureGap?: number;
+    fillWeight?: number;
   }>(),
   {
-    stroke: 'currentColor',
+    stroke: "currentColor",
     fill: undefined,
-    fillStyle: 'hachure',
+    fillStyle: "hachure",
     roughness: 1.1,
     bowing: 1.0,
     strokeWidth: 1.4,
@@ -30,40 +30,42 @@ const props = withDefaults(
     hachureGap: 4,
     fillWeight: 0.6,
   },
-)
+);
 
-const containerRef = ref<HTMLElement | null>(null)
-const width = ref(0)
-const height = ref(0)
+const containerRef = ref<HTMLElement | null>(null);
+const width = ref(0);
+const height = ref(0);
 
-let observer: ResizeObserver | null = null
+let observer: ResizeObserver | null = null;
 
 onMounted(() => {
-  if (!containerRef.value) return
+  if (!containerRef.value) return;
   observer = new ResizeObserver((entries) => {
-    const entry = entries[0]
-    if (!entry) return
-    const rect = entry.contentRect
-    const w = Math.round(rect.width)
-    const h = Math.round(rect.height)
-    if (w !== width.value || h !== height.value) {
-      width.value = w
-      height.value = h
-    }
-  })
-  observer.observe(containerRef.value)
-})
+    const entry = entries[0];
+    if (!entry) return;
+    const rect = entry.contentRect;
+    const w = Math.round(rect.width);
+    const h = Math.round(rect.height);
+    requestAnimationFrame(() => {
+      if (w !== width.value || h !== height.value) {
+        width.value = w;
+        height.value = h;
+      }
+    });
+  });
+  observer.observe(containerRef.value);
+});
 
 onUnmounted(() => {
-  observer?.disconnect()
-  observer = null
-})
+  observer?.disconnect();
+  observer = null;
+});
 
 const paths = computed<PathInfo[]>(() => {
-  const w = width.value
-  const h = height.value
-  const pad = props.paddingOffset
-  if (w <= pad * 2 || h <= pad * 2) return []
+  const w = width.value;
+  const h = height.value;
+  const pad = props.paddingOffset;
+  if (w <= pad * 2 || h <= pad * 2) return [];
 
   const drawable = roughGen.rectangle(
     pad,
@@ -82,9 +84,9 @@ const paths = computed<PathInfo[]>(() => {
       hachureGap: props.hachureGap,
       fillWeight: props.fillWeight,
     },
-  )
-  return roughGen.toPaths(drawable)
-})
+  );
+  return roughGen.toPaths(drawable);
+});
 </script>
 
 <template>

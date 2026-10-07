@@ -1,143 +1,155 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import RoughButton from './RoughButton.vue'
-import RoughBox from './RoughBox.vue'
-import { roughGen } from '../utils/rough'
-import type { PathInfo } from '../utils/rough'
+import { ref, computed, onMounted, onUnmounted } from "vue";
+import type { GamePhase } from "../types/game";
+import RoughButton from "./RoughButton.vue";
+import RoundTracker from "./RoundTracker.vue";
+import { roughGen } from "../utils/rough";
+import type { PathInfo } from "../utils/rough";
 
 defineProps<{
-  buildingCount: number
-  peoplePerBuilding: number
-  totalTenants: number
-}>()
+  round: number;
+  phase: GamePhase;
+  buildingCount?: number;
+  peoplePerBuilding?: number;
+  totalTenants?: number;
+  unionTenantsCount?: number;
+  totalEvictionsCount?: number;
+  coalitionCount?: number;
+  landlordMoney?: number;
+  landlordStartingMoney?: number;
+  canUndoSpend?: boolean;
+}>();
 
 const emit = defineEmits<{
-  (e: 'reset'): void
-  (e: 'edit'): void
-}>()
+  (e: "new-game"): void;
+  (e: "next-phase"): void;
+  (e: "prev-phase"): void;
+  (e: "shuffle-positions"): void;
+  (e: "spend-landlord-money", amount?: number): void;
+  (e: "undo-landlord-spend", amount?: number): void;
+}>();
 
-const isFullscreen = ref(false)
+const isFullscreen = ref(false);
 
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(() => {})
+    document.documentElement.requestFullscreen().catch(() => {});
   } else {
-    document.exitFullscreen().catch(() => {})
+    document.exitFullscreen().catch(() => {});
   }
 }
 
 function handleFullscreenChange() {
-  isFullscreen.value = Boolean(document.fullscreenElement)
+  isFullscreen.value = Boolean(document.fullscreenElement);
 }
 
 onMounted(() => {
-  document.addEventListener('fullscreenchange', handleFullscreenChange)
-})
+  document.addEventListener("fullscreenchange", handleFullscreenChange);
+});
 
 onUnmounted(() => {
-  document.removeEventListener('fullscreenchange', handleFullscreenChange)
-})
+  document.removeEventListener("fullscreenchange", handleFullscreenChange);
+});
 
 // Sketched bottom divider line
 const dividerPaths = computed<PathInfo[]>(() => {
   const line = roughGen.line(0, 2, 1600, 2, {
     roughness: 1.1,
-    stroke: '#d1c7b7',
+    stroke: "#d1c7b7",
     strokeWidth: 1.5,
     seed: 999,
-  })
-  return roughGen.toPaths(line)
-})
+  });
+  return roughGen.toPaths(line);
+});
 </script>
 
 <template>
   <header class="facilitator-bar">
     <div class="facilitator-bar-inner">
+      <!-- Brand section -->
       <div class="brand-section">
         <div class="union-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <path d="M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3zm0 3.5l5 4.5v6.5h-2v-6H9v6H7V11l5-4.5z" />
+            <path
+              d="M17,11V3H7v4H3v14h8v-4h2v4h8V11H17z M7,19H5v-2h2V19z M7,15H5v-2h2V15z M7,11H5V9h2V11z M11,15H9v-2h2V15z M11,11H9V9h2 V11z M11,7H9V5h2V7z M15,15h-2v-2h2V15z M15,11h-2V9h2V11z M15,7h-2V5h2V7z M19,19h-2v-2h2V19z M19,15h-2v-2h2V15z"
+            />
           </svg>
         </div>
-        <span class="game-name">Tenant Union Visual Aid</span>
+        <span class="game-name">Tenant Union</span>
       </div>
 
-      <!-- Summary Metrics -->
-      <div class="metrics-section">
-        <RoughBox
-          :stroke="'#a89c8a'"
-          :fill="'#faf7f2'"
-          fill-style="solid"
-          :roughness="0.8"
-          :stroke-width="1.0"
-          :seed="901"
-          class="metric-box"
-        >
-          <div class="metric-pill">
-            <span class="metric-label">Buildings</span>
-            <span class="metric-value">{{ buildingCount }}</span>
-          </div>
-        </RoughBox>
-
-        <RoughBox
-          :stroke="'#a89c8a'"
-          :fill="'#faf7f2'"
-          fill-style="solid"
-          :roughness="0.8"
-          :stroke-width="1.0"
-          :seed="902"
-          class="metric-box"
-        >
-          <div class="metric-pill">
-            <span class="metric-label">Per Bldg</span>
-            <span class="metric-value">{{ peoplePerBuilding }}</span>
-          </div>
-        </RoughBox>
-
-        <RoughBox
-          :stroke="'#292524'"
-          :fill="'#fef3c7'"
-          fill-style="solid"
-          :roughness="1.0"
-          :stroke-width="1.3"
-          :seed="903"
-          class="metric-box"
-        >
-          <div class="metric-pill highlight">
-            <span class="metric-label">Total Tenants</span>
-            <span class="metric-value">{{ totalTenants }}</span>
-          </div>
-        </RoughBox>
+      <!-- Center: Round & Phase Tracker with Font Arrows -->
+      <div class="round-tracker-center">
+        <RoundTracker
+          :round="round"
+          :phase="phase"
+          @next="emit('next-phase')"
+          @prev="emit('prev-phase')"
+        />
       </div>
 
-      <!-- Minimal Facilitator Actions -->
-      <div class="actions-section">
+      <!-- Center-Right: Landlord Action Buttons (Spend 50k & Undo) -->
+      <div class="landlord-top-actions">
         <RoughButton
-          variant="secondary"
-          :seed="910"
-          title="Toggle Fullscreen"
-          @click="toggleFullscreen"
+          variant="warning"
+          :disabled="(landlordMoney ?? 1) <= 0"
+          :seed="907"
+          title="Landlord spends $50,000"
+          @click="emit('spend-landlord-money', 50000)"
         >
-          <span>{{ isFullscreen ? '⛶ Exit Full' : '⛶ Fullscreen' }}</span>
+          <span class="landlord-btn-content">
+            <span class="landlord-btn-icon" aria-hidden="true">💸</span>
+            <span class="landlord-btn-text">Landlord spends 50k</span>
+          </span>
         </RoughButton>
 
         <RoughButton
+          v-if="canUndoSpend"
           variant="secondary"
-          :seed="911"
-          title="Change building or people count"
-          @click="emit('edit')"
+          :seed="909"
+          title="Undo landlord spend (+ $50,000)"
+          @click="emit('undo-landlord-spend', 50000)"
         >
-          <span>⚙ Edit</span>
+          <span class="undo-btn-content">
+            <span class="undo-btn-text">↺ +50k</span>
+          </span>
+        </RoughButton>
+      </div>
+
+      <!-- Right Controls: Edit Position Toggle, Metrics, and New Game -->
+      <div class="right-controls">
+        <!-- Reshuffle Buildings -->
+        <RoughButton
+          variant="secondary"
+          :seed="905"
+          title="Reshuffle building layout to spread them out"
+          @click="emit('shuffle-positions')"
+        >
+          <span class="shuffle-btn-content">
+            <span class="shuffle-icon" aria-hidden="true">🔀</span>
+            <span class="shuffle-text">Shuffle pos</span>
+          </span>
         </RoughButton>
 
-        <RoughButton
-          variant="danger"
-          :seed="912"
-          title="Start a new game"
-          @click="emit('reset')"
-        >
-          <span>New Game</span>
-        </RoughButton>
+        <div class="actions-section">
+          <RoughButton
+            variant="secondary"
+            :seed="910"
+            title="Toggle Fullscreen"
+            @click="toggleFullscreen"
+          >
+            <span>{{ isFullscreen ? "⛶" : "⛶ Full" }}</span>
+          </RoughButton>
+
+          <RoughButton
+            variant="danger"
+            :seed="912"
+            title="Start a new game"
+            @click="emit('new-game')"
+          >
+            <span>New Game</span>
+          </RoughButton>
+        </div>
       </div>
     </div>
 
@@ -162,18 +174,18 @@ const dividerPaths = computed<PathInfo[]>(() => {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(253, 251, 247, 0.95);
-  backdrop-filter: blur(8px);
+  background-color: #fbf8f2;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
 }
 
 .facilitator-bar-inner {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 8px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 24px;
   gap: 16px;
-  max-width: 1600px;
-  margin: 0 auto;
   flex-wrap: wrap;
 }
 
@@ -186,85 +198,109 @@ const dividerPaths = computed<PathInfo[]>(() => {
 .union-icon {
   display: flex;
   align-items: center;
+  justify-content: center;
   color: #78350f;
+  background: #fef3c7;
+  padding: 4px;
+  border-radius: 6px;
+  border: 1px solid #fde68a;
 }
 
 .game-name {
   font-weight: 800;
   font-size: 1.05rem;
-  color: #292524;
   letter-spacing: -0.01em;
+  color: #292524;
 }
 
-.metrics-section {
+.round-tracker-center {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
 }
 
-.metric-pill {
+.right-controls {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 4px 12px;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
-.metric-label {
-  font-size: 0.78rem;
-  color: #57534e;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.shuffle-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
-.metric-value {
-  font-size: 1.05rem;
-  font-weight: 800;
-  color: #1c1917;
+.shuffle-icon {
+  font-size: 0.9rem;
+  line-height: 1;
 }
 
-.highlight .metric-label {
-  color: #92400e;
+.shuffle-text {
+  font-weight: 700;
+  font-size: 0.85rem;
 }
-
-.highlight .metric-value {
-  color: #78350f;
-}
-
 .actions-section {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .facilitator-divider {
   width: 100%;
   height: 4px;
   overflow: hidden;
+  line-height: 0;
 }
 
 .divider-svg {
   width: 100%;
-  height: 100%;
+  height: 4px;
   display: block;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .facilitator-bar-inner {
-    padding: 8px 12px;
-    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
   }
-  .brand-section {
-    width: 100%;
+
+  .round-tracker-center {
+    order: 2;
     justify-content: center;
   }
-  .metrics-section {
-    width: 100%;
+
+  .right-controls {
+    order: 3;
     justify-content: center;
   }
-  .actions-section {
-    width: 100%;
-    justify-content: center;
-  }
+}
+
+.landlord-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.landlord-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.landlord-btn-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.undo-btn-content {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 700;
+  font-size: 0.82rem;
 }
 </style>
