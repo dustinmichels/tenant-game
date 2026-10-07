@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef } from "vue";
 import { roughGen } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
 
@@ -29,8 +29,8 @@ const emit = defineEmits<{
   (e: "update:modelValue", value: number): void;
 }>();
 
-const trackViewportRef = ref<HTMLElement | null>(null);
-const trackWidth = ref(240);
+const trackViewportRef = useTemplateRef<HTMLElement>("trackViewportRef");
+const trackWidth = shallowRef(240);
 
 let resizeObserver: ResizeObserver | null = null;
 
@@ -57,10 +57,10 @@ onUnmounted(() => {
   }
 });
 
-const isHovered = ref(false);
-const isDragging = ref(false);
-const isFocused = ref(false);
-const hoveredPip = ref<number | null>(null);
+const isHovered = shallowRef(false);
+const isDragging = shallowRef(false);
+const isFocused = shallowRef(false);
+const hoveredPip = shallowRef<number | null>(null);
 
 // Pad from viewport edge so the 22px thumb stays inside the track area
 const PAD = 13;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Building, Tenant } from "../types/game";
-import { isBuildingOrganized } from "../types/game";
+import { isBuildingOrganized, getTenantGridCols, BASELINE_PERSON_WIDTH } from "../types/game";
 import { roughGen, createSeed } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
 import RoughBox from "./RoughBox.vue";
@@ -15,6 +15,8 @@ const props = withDefaults(
     coalitionNames?: string;
     isConnectingSource?: boolean;
     isConnectingTarget?: boolean;
+    personWidth?: number;
+    isOrganized?: boolean;
   }>(),
   {
     effectiveColor: undefined,
@@ -22,6 +24,8 @@ const props = withDefaults(
     coalitionNames: "",
     isConnectingSource: false,
     isConnectingTarget: false,
+    personWidth: undefined,
+    isOrganized: undefined,
   },
 );
 const emit = defineEmits<{
@@ -42,7 +46,9 @@ const emit = defineEmits<{
 const buildingSeed = computed(() =>
   createSeed(`building_${props.building.id}_${props.building.index}`),
 );
-const isOrganized = computed(() => isBuildingOrganized(props.building));
+const isOrganized = computed(() =>
+  props.isOrganized !== undefined ? props.isOrganized : isBuildingOrganized(props.building),
+);
 const activeColor = computed(() => props.effectiveColor || props.building.color);
 
 function handlePointerDownSpool(e: PointerEvent) {
@@ -57,15 +63,23 @@ function handleDragPointerDown(e: PointerEvent) {
   if (e.button !== 0) return;
   emit("pointerdown-drag", e, props.building);
 }
+const effectivePersonWidth = computed(() =>
+  Math.max(20, props.personWidth ?? BASELINE_PERSON_WIDTH),
+);
+const effectivePersonHeight = computed(() => Math.round(effectivePersonWidth.value / 0.68));
+
 // Dynamic column layout based on tenant count
-const gridColumns = computed(() => {
-  const count = props.building.tenants.length;
-  if (count <= 1) return 1;
-  if (count <= 2) return 2;
-  if (count <= 3) return 3;
-  if (count <= 16) return 4;
-  if (count <= 25) return 5;
-  return 6;
+const gridColumns = computed(() => getTenantGridCols(props.building.tenants.length));
+
+// Dynamic building card width derived directly from number of people and size of people
+const cardWidth = computed(() => {
+  const cols = gridColumns.value;
+  const pw = effectivePersonWidth.value;
+  const gap = 3;
+  // Width of windows grid + padding around windows (5px on each side = 10px) + rough box border/padding (10px)
+  const contentWidth = cols * pw + (cols - 1) * gap + 20;
+  // Header plaque needs at least 138px to fit label, badges, gear comfortably without truncation
+  return Math.max(contentWidth, 138);
 });
 
 // Streamlined minimal rooftop parapet and cornice
@@ -130,6 +144,12 @@ const entrancePaths = computed<PathInfo[]>(() => {
       'is-in-coalition': isInCoalition,
       'is-connecting-source': isConnectingSource,
       'is-connecting-target': isConnectingTarget,
+    }"
+    :style="{
+      width: `${cardWidth}px`,
+      '--person-width': `${effectivePersonWidth}px`,
+      '--person-height': `${effectivePersonHeight}px`,
+      '--building-cols': gridColumns,
     }"
   >
     <!-- Coalition connector circle button/pin -->
@@ -299,9 +319,8 @@ const entrancePaths = computed<PathInfo[]>(() => {
   display: flex;
   flex-direction: column;
   position: relative;
-  width: 172px;
-  min-width: 140px;
-  max-width: 184px;
+  min-width: 138px;
+  max-width: 520px;
   transition:
     transform 0.2s ease,
     box-shadow 0.2s ease;
@@ -593,9 +612,10 @@ const entrancePaths = computed<PathInfo[]>(() => {
 }
 
 .building-windows-grid :deep(.building-window) {
-  width: calc((100% - (var(--building-cols, 4) - 1) * 3px) / var(--building-cols, 4));
-  max-width: 38px;
+  width: var(--person-width, 38px);
+  height: var(--person-height, 56px);
   aspect-ratio: 0.68;
+  flex-shrink: 0;
 }
 
 /* Ground entrance */

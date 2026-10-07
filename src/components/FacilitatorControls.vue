@@ -1,35 +1,37 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted, shallowRef } from "vue";
 import type { GamePhase } from "../types/game";
 import RoughButton from "./RoughButton.vue";
 import RoundTracker from "./RoundTracker.vue";
+import LandlordFundsModal from "./LandlordFundsModal.vue";
 import { roughGen } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
 
 defineProps<{
   round: number;
   phase: GamePhase;
-  buildingCount?: number;
-  peoplePerBuilding?: number;
-  totalTenants?: number;
-  unionTenantsCount?: number;
-  totalEvictionsCount?: number;
-  coalitionCount?: number;
   landlordMoney?: number;
-  landlordStartingMoney?: number;
-  canUndoSpend?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "new-game"): void;
   (e: "next-phase"): void;
   (e: "prev-phase"): void;
-  (e: "shuffle-positions"): void;
   (e: "spend-landlord-money", amount?: number): void;
-  (e: "undo-landlord-spend", amount?: number): void;
+  (e: "earn-landlord-money", amount?: number): void;
 }>();
 
-const isFullscreen = ref(false);
+const isLandlordModalOpen = shallowRef(false);
+
+function handleSpendLandlordMoney(amount: number) {
+  emit("spend-landlord-money", amount);
+}
+
+function handleEarnLandlordMoney(amount: number) {
+  emit("earn-landlord-money", amount);
+}
+
+const isFullscreen = shallowRef(false);
 
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
@@ -87,47 +89,18 @@ const dividerPaths = computed<PathInfo[]>(() => {
           @prev="emit('prev-phase')"
         />
       </div>
-
-      <!-- Center-Right: Landlord Action Buttons (Spend 50k & Undo) -->
-      <div class="landlord-top-actions">
+      <!-- Right Controls: Fullscreen and New Game -->
+      <!-- Right Controls: Landlord spend/earns, Fullscreen, and New Game -->
+      <div class="right-controls">
         <RoughButton
           variant="warning"
-          :disabled="(landlordMoney ?? 1) <= 0"
           :seed="907"
-          title="Landlord spends $50,000"
-          @click="emit('spend-landlord-money', 50000)"
+          title="Manage Landlord Funds (Spend / Earn)"
+          @click="isLandlordModalOpen = true"
         >
           <span class="landlord-btn-content">
             <span class="landlord-btn-icon" aria-hidden="true">💸</span>
-            <span class="landlord-btn-text">Landlord spends 50k</span>
-          </span>
-        </RoughButton>
-
-        <RoughButton
-          v-if="canUndoSpend"
-          variant="secondary"
-          :seed="909"
-          title="Undo landlord spend (+ $50,000)"
-          @click="emit('undo-landlord-spend', 50000)"
-        >
-          <span class="undo-btn-content">
-            <span class="undo-btn-text">↺ +50k</span>
-          </span>
-        </RoughButton>
-      </div>
-
-      <!-- Right Controls: Edit Position Toggle, Metrics, and New Game -->
-      <div class="right-controls">
-        <!-- Reshuffle Buildings -->
-        <RoughButton
-          variant="secondary"
-          :seed="905"
-          title="Reshuffle building layout to spread them out"
-          @click="emit('shuffle-positions')"
-        >
-          <span class="shuffle-btn-content">
-            <span class="shuffle-icon" aria-hidden="true">🔀</span>
-            <span class="shuffle-text">Shuffle pos</span>
+            <span class="landlord-btn-text">Landlord spend/earns</span>
           </span>
         </RoughButton>
 
@@ -166,6 +139,15 @@ const dividerPaths = computed<PathInfo[]>(() => {
         />
       </svg>
     </div>
+
+    <!-- Landlord Spend/Earn Modal -->
+    <LandlordFundsModal
+      :show="isLandlordModalOpen"
+      :landlord-money="landlordMoney"
+      @close="isLandlordModalOpen = false"
+      @spend="handleSpendLandlordMoney"
+      @earn="handleEarnLandlordMoney"
+    />
   </header>
 </template>
 
@@ -182,17 +164,17 @@ const dividerPaths = computed<PathInfo[]>(() => {
   max-width: 1600px;
   margin: 0 auto;
   padding: 8px 24px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
-  flex-wrap: wrap;
 }
 
 .brand-section {
   display: flex;
   align-items: center;
   gap: 8px;
+  justify-self: start;
 }
 
 .union-icon {
@@ -217,30 +199,16 @@ const dividerPaths = computed<PathInfo[]>(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  justify-self: center;
 }
 
 .right-controls {
   display: flex;
   align-items: center;
   gap: 14px;
-  flex-wrap: wrap;
+  justify-self: end;
 }
 
-.shuffle-btn-content {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.shuffle-icon {
-  font-size: 0.9rem;
-  line-height: 1;
-}
-
-.shuffle-text {
-  font-weight: 700;
-  font-size: 0.85rem;
-}
 .actions-section {
   display: flex;
   align-items: center;
@@ -278,12 +246,6 @@ const dividerPaths = computed<PathInfo[]>(() => {
   }
 }
 
-.landlord-top-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .landlord-btn-content {
   display: inline-flex;
   align-items: center;
@@ -297,10 +259,8 @@ const dividerPaths = computed<PathInfo[]>(() => {
   line-height: 1;
 }
 
-.undo-btn-content {
-  display: inline-flex;
-  align-items: center;
+.landlord-btn-text {
   font-weight: 700;
-  font-size: 0.82rem;
+  font-size: 0.86rem;
 }
 </style>

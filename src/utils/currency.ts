@@ -47,3 +47,26 @@ export function formatCompactCurrency(amount: number): string {
   }
   return `${sign}$${abs}`;
 }
+
+/**
+ * Parses user input strings into dollar amounts.
+ * Supports integers, commas, dollar signs, and 'k' / 'm' suffixes.
+ * e.g. "25000" -> 25000, "$25,000" -> 25000, "50k" -> 50000, "1.5m" -> 1500000.
+ * Returns null for invalid or non-positive inputs.
+ */
+export function parseCustomAmount(input: string): number | null {
+  const raw = input.trim().toLowerCase().replace(/[$,]/g, "");
+  if (!raw) return null;
+  let mult = 1;
+  let numStr = raw;
+  if (raw.endsWith("k")) {
+    mult = 1_000;
+    numStr = raw.slice(0, -1).trim();
+  } else if (raw.endsWith("m")) {
+    mult = 1_000_000;
+    numStr = raw.slice(0, -1).trim();
+  }
+  const val = parseFloat(numStr);
+  if (isNaN(val) || val <= 0) return null;
+  return Math.round(val * mult);
+}

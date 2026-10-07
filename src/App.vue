@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { useGameStorage } from "./composables/useGameStorage";
+import { shallowRef } from "vue";
+import { storeToRefs } from "pinia";
+import { useGameStore } from "./stores/game";
 import SetupForm from "./components/SetupForm.vue";
 import FacilitatorControls from "./components/FacilitatorControls.vue";
 import TallyTable from "./components/TallyTable.vue";
 import BuildingCanvas from "./components/BuildingCanvas.vue";
+
+const gameStore = useGameStore();
 const {
-  state,
   isConfigured,
   buildings,
+  buildingCount,
+  peoplePerBuilding,
   round,
   phase,
   tallies,
@@ -16,27 +20,16 @@ const {
   coalitions,
   buildingColorMap,
   canUndoCoalition,
-  setupGame,
-  nextPhase,
-  prevPhase,
-  toggleUnion,
-  toggleEviction,
-  adjustBuildingTenants,
-  updateBuildingPosition,
-  updateBuildingPositions,
-  shufflePositions,
-  connectCoalition,
-  disconnectCoalition,
-  disconnectBuilding,
-  undoLastCoalition,
+  personWidth,
+  personHeight,
+  personScale,
   landlordStartingMoney,
   landlordMoney,
   canUndoLandlordSpend,
-  spendLandlordMoney,
-  undoLandlordSpend,
-} = useGameStorage();
+  events,
+} = storeToRefs(gameStore);
 
-const isSettingUpNewGame = ref(false);
+const isSettingUpNewGame = shallowRef(false);
 
 function handleNewGameClick() {
   isSettingUpNewGame.value = true;
@@ -51,7 +44,11 @@ function handleSubmitSetup(payload: {
   peoplePerBuilding: number;
   landlordStartingMoney: number;
 }) {
-  setupGame(payload.buildingCount, payload.peoplePerBuilding, payload.landlordStartingMoney);
+  gameStore.setupGame(
+    payload.buildingCount,
+    payload.peoplePerBuilding,
+    payload.landlordStartingMoney,
+  );
   isSettingUpNewGame.value = false;
 }
 </script>
@@ -64,20 +61,18 @@ function handleSubmitSetup(payload: {
       :round="round"
       :phase="phase"
       :landlord-money="landlordMoney"
-      :landlord-starting-money="landlordStartingMoney"
-      :can-undo-spend="canUndoLandlordSpend"
-      @next-phase="nextPhase"
-      @prev-phase="prevPhase"
-      @shuffle-positions="shufflePositions"
-      @spend-landlord-money="spendLandlordMoney"
-      @undo-landlord-spend="undoLandlordSpend"
+      @next-phase="gameStore.nextPhase"
+      @prev-phase="gameStore.prevPhase"
+      @spend-landlord-money="gameStore.spendLandlordMoney"
+      @earn-landlord-money="gameStore.earnLandlordMoney"
       @new-game="handleNewGameClick"
     />
+
     <!-- Setup Screen: displayed if not configured, or if facilitator clicked New Game -->
     <SetupForm
       v-if="!isConfigured || isSettingUpNewGame"
-      :initial-buildings="state.buildingCount"
-      :initial-people="state.peoplePerBuilding"
+      :initial-buildings="buildingCount"
+      :initial-people="peoplePerBuilding"
       :is-cancelable="isConfigured"
       @submit="handleSubmitSetup"
       @cancel="handleCancelSetup"
@@ -92,33 +87,40 @@ function handleSubmitSetup(payload: {
           :buildings="buildings"
           :landlord-money="landlordMoney"
           :landlord-starting-money="landlordStartingMoney"
-          :can-undo-spend="canUndoLandlordSpend"
           :coalition-count="coalitions.length"
           :coalitions="coalitions"
           :building-color-map="buildingColorMap"
-          @spend-landlord-money="spendLandlordMoney"
-          @undo-landlord-spend="undoLandlordSpend"
+          :events="events"
+          :can-undo-spend="canUndoLandlordSpend"
+          @add-event="gameStore.addEvent"
+          @remove-event="gameStore.removeEvent"
+          @spend-landlord-money="gameStore.spendLandlordMoney"
+          @undo-landlord-spend="gameStore.undoLandlordSpend"
         />
       </aside>
 
       <section class="board-canvas-section" aria-label="Building Canvas">
         <BuildingCanvas
           :buildings="buildings"
-          :default-people="state.peoplePerBuilding"
+          :default-people="peoplePerBuilding"
           :coalition-connections="coalitionConnections"
           :coalitions="coalitions"
           :building-color-map="buildingColorMap"
           :can-undo-coalition="canUndoCoalition"
           :landlord-money="landlordMoney"
-          @update-building-position="updateBuildingPosition"
-          @update-building-positions="updateBuildingPositions"
-          @adjust-tenants="adjustBuildingTenants"
-          @toggle-union="toggleUnion"
-          @toggle-eviction="toggleEviction"
-          @connect-coalition="connectCoalition"
-          @disconnect-coalition="disconnectCoalition"
-          @disconnect-building="disconnectBuilding"
-          @undo-coalition="undoLastCoalition"
+          :person-width="personWidth"
+          :person-height="personHeight"
+          :person-scale="personScale"
+          @update-building-position="gameStore.updateBuildingPosition"
+          @update-building-positions="gameStore.updateBuildingPositions"
+          @adjust-tenants="gameStore.adjustBuildingTenants"
+          @toggle-union="gameStore.toggleUnion"
+          @toggle-eviction="gameStore.toggleEviction"
+          @connect-coalition="gameStore.connectCoalition"
+          @disconnect-coalition="gameStore.disconnectCoalition"
+          @disconnect-building="gameStore.disconnectBuilding"
+          @undo-coalition="gameStore.undoLastCoalition"
+          @shuffle-positions="gameStore.shufflePositions"
         />
       </section>
     </div>

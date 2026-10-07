@@ -2,12 +2,7 @@
 import { computed } from "vue";
 import type { Building, CoalitionGroup } from "../types/game";
 import { getBuildingUnionCount } from "../types/game";
-import {
-  blendHexColors,
-  getCoalitionGradient,
-  getLightTint,
-  getContrastTextColor,
-} from "../utils/coalitionColors";
+import { mergeColors, getLightTint, getContrastTextColor } from "../utils/colorTheory";
 
 interface DecoratedCoalition {
   id: string;
@@ -17,7 +12,6 @@ interface DecoratedCoalition {
   colors: string[];
   dominantColor: string;
   blendedColor: string;
-  gradient: string;
   totalUnionCount: number;
 }
 
@@ -62,19 +56,23 @@ const decoratedCoalitions = computed<DecoratedCoalition[]>(() => {
       .filter((b): b is Building => b !== undefined);
 
     const colors = memberBuildings.map((b) => b.color);
+    const coalitionColor = c.dominantColor || c.coalitionColor || mergeColors(colors);
     return {
       id: c.id,
       name: `Coalition ${idx + 1}`,
       coalition: c,
       buildings: memberBuildings,
       colors,
-      dominantColor: c.dominantColor,
-      blendedColor: blendHexColors(colors),
-      gradient: getCoalitionGradient(colors),
+      dominantColor: coalitionColor,
+      blendedColor: coalitionColor,
       totalUnionCount: c.totalUnionCount,
     };
   });
 });
+
+function getEffectiveColor(building: Building, fallbackColor?: string): string {
+  return props.buildingColorMap?.[building.id] || fallbackColor || building.color;
+}
 </script>
 
 <template>
@@ -106,8 +104,8 @@ const decoratedCoalitions = computed<DecoratedCoalition[]>(() => {
           boxShadow: `0 2px 8px ${getLightTint(item.dominantColor, 0.2)}`,
         }"
       >
-        <!-- Top accent banner with the combined color gradient -->
-        <div class="coalition-top-accent" :style="{ background: item.gradient }" />
+        <!-- Top accent banner with the combined coalition color -->
+        <div class="coalition-top-accent" :style="{ backgroundColor: item.dominantColor }" />
 
         <!-- Coalition Box Header -->
         <div
@@ -120,7 +118,7 @@ const decoratedCoalitions = computed<DecoratedCoalition[]>(() => {
           <div class="coalition-title-wrap">
             <span
               class="combined-color-swatch"
-              :style="{ background: item.gradient }"
+              :style="{ backgroundColor: item.dominantColor }"
               title="Combined coalition color"
             />
             <h4 class="coalition-name">{{ item.name }}</h4>
@@ -147,18 +145,28 @@ const decoratedCoalitions = computed<DecoratedCoalition[]>(() => {
             :key="b.id"
             class="building-rect inside-coalition"
             :style="{
-              borderColor: b.color,
-              backgroundColor: getLightTint(b.color, 0.08),
+              borderColor: getEffectiveColor(b, item.dominantColor),
+              backgroundColor: getLightTint(getEffectiveColor(b, item.dominantColor), 0.08),
             }"
           >
-            <span
-              class="building-swatch"
-              :style="{ backgroundColor: b.color }"
-              :title="`${b.label} color`"
-            />
+            <div class="swatches-wrap">
+              <span
+                class="building-swatch"
+                :style="{ backgroundColor: getEffectiveColor(b, item.dominantColor) }"
+                :title="`${b.label} effective coalition color: ${getEffectiveColor(b, item.dominantColor)}`"
+              />
+              <span
+                v-if="b.color !== getEffectiveColor(b, item.dominantColor)"
+                class="original-color-pip"
+                :style="{ backgroundColor: b.color }"
+                :title="`Original building color: ${b.color}`"
+              />
+            </div>
             <div class="building-info">
               <span class="building-name">{{ b.label }}</span>
-              <span class="building-sub">{{ getBuildingUnionCount(b) }} in union</span>
+              <span class="building-sub"
+                >{{ getBuildingUnionCount(b, item.coalition) }} in union</span
+              >
             </div>
           </div>
         </div>
@@ -180,13 +188,13 @@ const decoratedCoalitions = computed<DecoratedCoalition[]>(() => {
           :key="b.id"
           class="building-rect"
           :style="{
-            borderColor: b.color,
-            backgroundColor: getLightTint(b.color, 0.08),
+            borderColor: getEffectiveColor(b),
+            backgroundColor: getLightTint(getEffectiveColor(b), 0.08),
           }"
         >
           <span
             class="building-swatch"
-            :style="{ backgroundColor: b.color }"
+            :style="{ backgroundColor: getEffectiveColor(b) }"
             :title="`${b.label} color`"
           />
           <div class="building-info">
@@ -399,6 +407,21 @@ const decoratedCoalitions = computed<DecoratedCoalition[]>(() => {
   border: 1px solid rgba(0, 0, 0, 0.18);
   flex-shrink: 0;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.swatches-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.original-color-pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
 }
 
 .building-info {

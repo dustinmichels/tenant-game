@@ -4,7 +4,7 @@ import RoughBox from "./RoughBox.vue";
 
 const props = withDefaults(
   defineProps<{
-    variant?: "primary" | "secondary" | "danger" | "warning" | "ghost";
+    variant?: "primary" | "secondary" | "danger" | "warning" | "success" | "ghost";
     disabled?: boolean;
     type?: "button" | "submit" | "reset";
     seed?: number;
@@ -54,6 +54,13 @@ const buttonColors = computed(() => {
         fill: isHovered.value ? "#fde68a" : "#fef3c7",
         fillStyle: "solid" as const,
         textColor: isHovered.value ? "#78350f" : "#92400e",
+      };
+    case "success":
+      return {
+        stroke: isHovered.value ? "#15803d" : "#16a34a",
+        fill: isHovered.value ? "#bbf7d0" : "#dcfce7",
+        fillStyle: "solid" as const,
+        textColor: isHovered.value ? "#14532d" : "#166534",
       };
     case "ghost":
       return {

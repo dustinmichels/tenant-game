@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { computed, watch, onMounted, onUnmounted, shallowRef } from "vue";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
 import RoughSlider from "./RoughSlider.vue";
@@ -36,8 +36,8 @@ const emit = defineEmits<{
   (e: "cancel"): void;
 }>();
 
-const buildingCount = ref<number | null>(props.initialBuildings ?? 4);
-const peoplePerBuilding = ref<number | null>(props.initialPeople ?? 8);
+const buildingCount = shallowRef<number | null>(props.initialBuildings ?? 4);
+const peoplePerBuilding = shallowRef<number | null>(props.initialPeople ?? 8);
 
 const totalPlayers = computed(() => {
   const b = Number(buildingCount.value);
@@ -56,14 +56,14 @@ const isOldFormula =
   props.initialLandlordMoney === oldFormulaForProps &&
   oldFormulaForProps !== defaultMoneyForProps;
 
-const isMoneyManuallyEdited = ref(
+const isMoneyManuallyEdited = shallowRef(
   props.initialLandlordMoney !== undefined &&
     props.initialLandlordMoney !== null &&
     !isOldFormula &&
     props.initialLandlordMoney !== defaultMoneyForProps,
 );
 
-const landlordStartingMoney = ref<number | null>(
+const landlordStartingMoney = shallowRef<number | null>(
   props.initialLandlordMoney !== undefined && props.initialLandlordMoney !== null && !isOldFormula
     ? props.initialLandlordMoney
     : calculateDefaultLandlordMoney(buildingCount.value, peoplePerBuilding.value),
@@ -97,7 +97,7 @@ const isPeopleAboveMax = computed(() => {
   return !isNaN(num) && num > 8;
 });
 
-const errorMessage = ref("");
+const errorMessage = shallowRef("");
 
 function handleSubmit() {
   const b = Number(buildingCount.value);

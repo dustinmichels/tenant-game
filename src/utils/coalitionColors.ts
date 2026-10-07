@@ -1,6 +1,7 @@
 /**
  * Color utilities for building and coalition visual representations.
  */
+export * from "./colorTheory";
 
 export interface RgbColor {
   r: number;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef } from "vue";
 import { roughGen } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
 
@@ -32,9 +32,9 @@ const props = withDefaults(
   },
 );
 
-const containerRef = ref<HTMLElement | null>(null);
-const width = ref(0);
-const height = ref(0);
+const containerRef = useTemplateRef<HTMLElement>("containerRef");
+const width = shallowRef(0);
+const height = shallowRef(0);
 
 let observer: ResizeObserver | null = null;
 

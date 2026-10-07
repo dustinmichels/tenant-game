@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick, watch, useTemplateRef } from "vue";
 import type {
   Building,
   Tenant,
@@ -12,6 +12,9 @@ import {
   checkBuildingOverlap,
   clampBuildingPosition,
   resolveBuildingCollisions,
+  calculateOptimalPersonSize,
+  BASELINE_PERSON_WIDTH,
+  isBuildingOrganized,
 } from "../types/game";
 import { roughGen, createSeed } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
@@ -26,6 +29,8 @@ import BuildingCard from "./BuildingCard.vue";
 import LandlordBuilding from "./LandlordBuilding.vue";
 import TenantContextMenu from "./TenantContextMenu.vue";
 import TenantAdjustModal from "./TenantAdjustModal.vue";
+import BreakCoalitionModal from "./BreakCoalitionModal.vue";
+import RoughButton from "./RoughButton.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -36,6 +41,9 @@ const props = withDefaults(
     buildingColorMap?: Record<string, string>;
     canUndoCoalition?: boolean;
     landlordMoney?: number;
+    personWidth?: number;
+    personHeight?: number;
+    personScale?: number;
   }>(),
   {
     defaultPeople: 8,
@@ -43,8 +51,37 @@ const props = withDefaults(
     coalitions: () => [],
     buildingColorMap: () => ({}),
     canUndoCoalition: false,
+    personWidth: undefined,
+    personHeight: undefined,
+    personScale: undefined,
   },
 );
+
+const maxTenants = computed(() => {
+  if (!props.buildings || props.buildings.length === 0) return props.defaultPeople || 8;
+  return Math.max(...props.buildings.map((b) => b.tenants?.length || 0), 1);
+});
+
+const responsiveSizing = computed(() => {
+  const canvasW = canvasDimensions.value.width > 0 ? canvasDimensions.value.width : 1050;
+  const canvasH = canvasDimensions.value.height > 0 ? canvasDimensions.value.height : 750;
+  return calculateOptimalPersonSize(props.buildings.length, maxTenants.value, canvasW, canvasH);
+});
+
+const effectivePersonWidth = computed(() => {
+  if (typeof props.personWidth === "number" && props.personWidth > 0) {
+    return Math.min(props.personWidth, responsiveSizing.value.personWidth);
+  }
+  return responsiveSizing.value.personWidth;
+});
+
+const effectivePersonHeight = computed(() => {
+  return Math.round(effectivePersonWidth.value / 0.68);
+});
+
+const effectivePersonScale = computed(() => {
+  return Math.round((effectivePersonWidth.value / BASELINE_PERSON_WIDTH) * 100) / 100;
+});
 
 const emit = defineEmits<{
   (e: "update-building-position", buildingId: string, x: number, y: number): void;
@@ -56,8 +93,9 @@ const emit = defineEmits<{
   (e: "disconnect-coalition", connectionId: string): void;
   (e: "disconnect-building", buildingId: string): void;
   (e: "undo-coalition"): void;
+  (e: "shuffle-positions"): void;
 }>();
-const canvasRef = ref<HTMLElement | null>(null);
+const canvasRef = useTemplateRef<HTMLElement>("canvasRef");
 
 // Pointer drag state for repositioning buildings in Edit Position mode
 const isDragging = ref(false);
@@ -351,6 +389,10 @@ watch(
   },
   { deep: true },
 );
+watch(effectivePersonWidth, () => {
+  nextTick(updatePinPositions);
+  setTimeout(updatePinPositions, 200);
+});
 
 // Toast notification banner
 const toastNotice = ref<{ text: string; showUndo: boolean } | null>(null);
@@ -658,6 +700,39 @@ const activeDragThread = computed(() => {
   };
 });
 
+// Coalition Disconnect Confirmation Modal State
+const breakModal = ref<{
+  show: boolean;
+  connectionId: string | null;
+  sourceLabel: string;
+  targetLabel: string;
+}>({
+  show: false,
+  connectionId: null,
+  sourceLabel: "",
+  targetLabel: "",
+});
+
+function promptBreakCoalition(thread: RenderedThread) {
+  breakModal.value = {
+    show: true,
+    connectionId: thread.id,
+    sourceLabel: thread.sourceLabel,
+    targetLabel: thread.targetLabel,
+  };
+}
+
+function closeBreakModal() {
+  breakModal.value.show = false;
+  breakModal.value.connectionId = null;
+}
+
+function handleConfirmBreakCoalition(connectionId: string) {
+  emit("disconnect-coalition", connectionId);
+  showToast("Coalition connection disconnected.", false);
+  closeBreakModal();
+}
+
 function handleDisconnectConnection(connectionId: string) {
   emit("disconnect-coalition", connectionId);
   showToast("Coalition connection disconnected.", false);
@@ -686,7 +761,17 @@ function getBuildingCoalitionNames(buildingId: string): string {
 </script>
 
 <template>
-  <main ref="canvasRef" class="building-canvas" role="main" @click="handleCanvasClick">
+  <main
+    ref="canvasRef"
+    class="building-canvas"
+    :style="{
+      '--person-width': `${effectivePersonWidth}px`,
+      '--person-height': `${effectivePersonHeight}px`,
+      '--person-scale': `${effectivePersonScale}`,
+    }"
+    role="main"
+    @click="handleCanvasClick"
+  >
     <!-- Coalition Connection Prompt Bar -->
     <transition name="fade-slide">
       <div v-if="threadDrag.isClickConnecting" class="coalition-connecting-banner">
@@ -734,7 +819,7 @@ function getBuildingCoalitionNames(buildingId: string): string {
         <path
           :d="thread.pathData"
           class="thread-hit-area"
-          @click.stop="handleDisconnectConnection(thread.id)"
+          @click.stop="promptBreakCoalition(thread)"
         >
           <title>
             {{
@@ -767,10 +852,16 @@ function getBuildingCoalitionNames(buildingId: string): string {
         <g
           class="thread-cut-pin"
           :transform="`translate(${thread.midX}, ${thread.midY})`"
-          @click.stop="handleDisconnectConnection(thread.id)"
+          role="button"
+          :aria-label="`Disconnect coalition between ${thread.sourceLabel} and ${thread.targetLabel}`"
+          @click.stop="promptBreakCoalition(thread)"
         >
-          <circle r="11" class="cut-pin-bg" :style="{ stroke: thread.color }" />
-          <text text-anchor="middle" dy="4" class="cut-pin-icon">✂</text>
+          <!-- Stable transparent hit area so hover does not jitter at borders -->
+          <circle r="16" class="cut-pin-hit-area" />
+          <g class="cut-pin-content">
+            <circle r="11" class="cut-pin-bg" :style="{ stroke: thread.color }" />
+            <text text-anchor="middle" dy="4" class="cut-pin-icon">✂</text>
+          </g>
           <title>
             {{ `Disconnect coalition between ${thread.sourceLabel} and ${thread.targetLabel}` }}
           </title>
@@ -824,9 +915,11 @@ function getBuildingCoalitionNames(buildingId: string): string {
         :building="building"
         :effective-color="buildingColorMap[building.id] || building.color"
         :is-in-coalition="isBuildingInCoalition(building.id)"
+        :is-organized="isBuildingOrganized(building, coalitions)"
         :coalition-names="getBuildingCoalitionNames(building.id)"
         :is-connecting-source="threadDrag.sourceBuilding?.id === building.id"
         :is-connecting-target="threadDrag.targetBuilding?.id === building.id"
+        :person-width="effectivePersonWidth"
         @tenant-select="handleTenantSelect"
         @tenant-context-menu="handleTenantSelect"
         @adjust-tenants="handleOpenAdjustModal"
@@ -857,6 +950,30 @@ function getBuildingCoalitionNames(buildingId: string): string {
       @close="closeAdjustModal"
       @save="handleSaveAdjustTenants"
     />
+
+    <!-- Modal for Breaking Coalition Confirmation -->
+    <BreakCoalitionModal
+      :show="breakModal.show"
+      :connection-id="breakModal.connectionId"
+      :source-label="breakModal.sourceLabel"
+      :target-label="breakModal.targetLabel"
+      @close="closeBreakModal"
+      @confirm="handleConfirmBreakCoalition"
+    />
+    <!-- Bottom Corner: Shuffle Positions Floating Button -->
+    <div class="canvas-shuffle-corner">
+      <RoughButton
+        variant="secondary"
+        :seed="905"
+        title="Reshuffle building layout to spread them out"
+        @click.stop="emit('shuffle-positions')"
+      >
+        <span class="shuffle-btn-content">
+          <span class="shuffle-icon" aria-hidden="true">🔀</span>
+          <span class="shuffle-text">Shuffle pos</span>
+        </span>
+      </RoughButton>
+    </div>
   </main>
 </template>
 <style scoped>
@@ -885,6 +1002,34 @@ function getBuildingCoalitionNames(buildingId: string): string {
   right: 16px;
   z-index: 20;
   pointer-events: auto;
+}
+
+/* Bottom Corner: Shuffle Positions */
+.canvas-shuffle-corner {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 25;
+  pointer-events: auto;
+}
+
+.shuffle-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+}
+
+.shuffle-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.shuffle-text {
+  font-weight: 700;
+  font-size: 0.86rem;
+  letter-spacing: -0.01em;
+  color: #292524;
 }
 
 /* Spatial placement of residential buildings */
@@ -1072,11 +1217,25 @@ function getBuildingCoalitionNames(buildingId: string): string {
 .thread-cut-pin {
   cursor: pointer;
   pointer-events: auto;
+}
+
+.cut-pin-hit-area {
+  fill: transparent;
+  stroke: none;
+  pointer-events: all;
+}
+
+.cut-pin-content {
+  transform-origin: 0 0;
   transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.thread-cut-pin:hover {
-  transform: scale(1.3) !important;
+.thread-cut-pin:hover .cut-pin-content {
+  transform: scale(1.25);
+}
+
+.thread-cut-pin:active .cut-pin-content {
+  transform: scale(1.1);
 }
 
 .cut-pin-bg {
