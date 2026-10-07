@@ -10,7 +10,7 @@ User can click a "pencil" icon in each building to adjust the number of tenants 
 
 One random person from each building should be the "instigator" and colored a special color. Different color for each building.
 
-Buildings are initially placed left-to-right, then top-to-bottom. The layout chooses the row/column count that fits the largest readable buildings in the available canvas, keeps gutters between buildings, and reserves the right edge for the landlord office and controls. Person and building sizes decrease smoothly as the total player count grows, but never expand beyond their baseline size; small games use the extra room as space between buildings.
+Buildings are initially placed left-to-right, then top-to-bottom. The layout chooses the row/column count that fits the largest comfortable buildings across the canvas, keeps gutters between them, and centers incomplete rows for a less rigid arrangement. Sparse games grow only to a modest size cap so their buildings retain generous gutters; dense games shrink to remain readable.
 
 ## Gameplay
 
@@ -38,7 +38,7 @@ The main board is split into two parts: a tally section on the left (20%) and a 
 
 ### Building cavnas
 
-In the building canvas, we see buildings laid out spatially. It should also show an office building in the corner, with on person in it, labeled as "Landlord, Inc."
+In the building canvas, we see buildings laid out spatially. The optional office building in the corner, labeled "Landlord, Inc.", is hidden by default; the "Show landlord" control starts disabled and can be turned on to show it.
 
 I want it to be possible to drag and drop buildings to rearrange them. Not all the time. There should be a toggle "Edit position" and when it's on THEN they can rearrange.
 

@@ -142,8 +142,9 @@ function repulseBuildingFrom(
 }
 
 /**
- * Generates deterministic row-major positions that use the residential area
- * while preserving a full gutter between adjacent grid cells.
+ * Generates deterministic row-major positions across the residential area.
+ * Incomplete rows are centered so they use the canvas without forming a rigid,
+ * top-left-aligned grid.
  */
 export function generateDefaultPositions(
   count: number,
@@ -163,11 +164,17 @@ export function generateDefaultPositions(
     height,
   );
 
+  const fullRowWidth = cols * cellWidth + (cols - 1) * BUILDING_GAP_PX;
+
   return Array.from({ length: count }, (_, index) => {
     const row = Math.floor(index / cols);
     const col = index % cols;
+    const buildingsInRow = Math.min(cols, count - row * cols);
+    const rowWidth = buildingsInRow * cellWidth + (buildingsInRow - 1) * BUILDING_GAP_PX;
+    const rowOffset = (fullRowWidth - rowWidth) / 2;
+
     return clampBuildingPosition({
-      x: ((originX + col * (cellWidth + BUILDING_GAP_PX)) / width) * 100,
+      x: ((originX + rowOffset + col * (cellWidth + BUILDING_GAP_PX)) / width) * 100,
       y: ((originY + row * (cellHeight + BUILDING_GAP_PX)) / height) * 100,
     });
   });

@@ -11,6 +11,7 @@ import type {
   GameEventType,
   GameEventAction,
   CoalitionGroup,
+  BuildingRoofType,
 } from "../types/game";
 import {
   isBuildingOrganized,
@@ -28,6 +29,10 @@ import { calculateDefaultLandlordMoney } from "../utils/currency";
 import {
   formatSpendEventText,
   formatEarnEventText,
+  formatJoinUnionEventText,
+  formatEvictEventText,
+  formatCoalitionEventText,
+  ensureEventEmoji,
   isSpendEventText,
   isEarnEventText,
 } from "../utils/eventLog";
@@ -64,7 +69,7 @@ function createDefaultState(): GameState {
     },
     events: [],
     landlordPosition: { x: 82, y: 3 },
-    showLandlord: true,
+    showLandlord: false,
   };
 }
 
@@ -82,6 +87,15 @@ function generateBuildings(
     canvasHeight,
   );
   const divergentColors = generateDivergentPalette(buildingCount);
+  const roofVariations: readonly BuildingRoofType[] = [
+    "flat",
+    "pitched",
+    "mansard",
+    "flat-chairs",
+    "flat",
+    "pitched",
+    "flat-chairs",
+  ];
 
   for (let i = 1; i <= buildingCount; i++) {
     const buildingId = `b-${i}`;
@@ -101,6 +115,9 @@ function generateBuildings(
     }
 
     const pos = positions[i - 1] ?? { x: 10 + ((i * 20) % 70), y: 15 + ((i * 22) % 65) };
+    const roofType = roofVariations[(i - 1) % roofVariations.length]!;
+    const hasBalcony = (i - 1) % 2 === 0;
+    const hasGrass = (i - 1) % 2 === 1;
 
     result.push({
       id: buildingId,
@@ -110,6 +127,9 @@ function generateBuildings(
       tenants,
       x: pos.x,
       y: pos.y,
+      roofType,
+      hasBalcony,
+      hasGrass,
     });
   }
   return result;
@@ -130,7 +150,7 @@ export const useGameStore = defineStore(
     const landlordPosition = ref<{ x: number; y: number }>(
       initial.landlordPosition ?? { x: 82, y: 3 },
     );
-    const showLandlord = ref(initial.showLandlord ?? true);
+    const showLandlord = ref(initial.showLandlord ?? false);
     const buildings = ref<Building[]>(initial.buildings);
     const coalitionConnections = ref<CoalitionConnection[]>(initial.coalitionConnections ?? []);
     const round = ref(initial.round);
@@ -250,7 +270,7 @@ export const useGameStore = defineStore(
       };
       events.value = [];
       landlordPosition.value = { x: 82, y: 3 };
-      showLandlord.value = true;
+      showLandlord.value = false;
     }
 
     function spendLandlordMoney(amount = 50000) {
@@ -303,9 +323,7 @@ export const useGameStore = defineStore(
     ) {
       const trimmed = text.trim();
       if (!trimmed) return;
-      const formattedText = /^landlord\b/i.test(trimmed)
-        ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
-        : trimmed;
+      const formattedText = ensureEventEmoji(trimmed, type, action?.type);
       const resolvedType: GameEventType =
         type ??
         (isSpendEventText(formattedText)
@@ -479,7 +497,7 @@ export const useGameStore = defineStore(
 
       const isNowInUnion = Boolean(tenant.inUnion || tenant.isInstigator);
       if (!wasInUnion && isNowInUnion) {
-        addEvent(`Resident in ${building.label} joined tenant union`, "general", building.id, {
+        addEvent(formatJoinUnionEventText(building.label), "general", building.id, {
           type: "joinUnion",
           buildingId: building.id,
           tenantId: tenant.id,
@@ -506,7 +524,7 @@ export const useGameStore = defineStore(
       }
 
       if (!wasEvicted && newEvicted) {
-        addEvent(`Resident in ${building.label} evicted`, "general", building.id, {
+        addEvent(formatEvictEventText(building.label), "general", building.id, {
           type: "evict",
           buildingId: building.id,
           tenantId: tenant.id,
@@ -552,6 +570,9 @@ export const useGameStore = defineStore(
       targetCount: number,
       label?: string,
       color?: string,
+      roofType?: BuildingRoofType,
+      hasBalcony?: boolean,
+      hasGrass?: boolean,
     ) {
       const building = buildings.value.find((b) => b.id === buildingId);
       if (!building) return;
@@ -562,8 +583,18 @@ export const useGameStore = defineStore(
       if (typeof color === "string" && color.trim()) {
         building.color = color.trim();
       }
-
-      const clampedTarget = Math.max(1, Math.min(100, Math.floor(targetCount)));
+      if (roofType) {
+        building.roofType = roofType;
+      }
+      if (typeof hasBalcony === "boolean") {
+        building.hasBalcony = hasBalcony;
+      }
+      if (typeof hasGrass === "boolean") {
+        building.hasGrass = hasGrass;
+      }
+      const preservedCount = building.tenants.filter((t) => t.isInstigator || t.inUnion).length;
+      const minAllowed = Math.max(1, preservedCount);
+      const clampedTarget = Math.max(minAllowed, Math.min(100, Math.floor(targetCount)));
       const currentCount = building.tenants.length;
 
       if (clampedTarget > currentCount) {
@@ -639,7 +670,7 @@ export const useGameStore = defineStore(
         createdAt: Date.now(),
       });
       addEvent(
-        `Coalition formed: ${sourceBuilding.label} + ${targetBuilding.label}`,
+        formatCoalitionEventText(sourceBuilding.label, targetBuilding.label),
         "general",
         undefined,
         {

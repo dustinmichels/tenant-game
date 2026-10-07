@@ -3,6 +3,7 @@ import { computed, shallowRef, watch, nextTick, onMounted, useTemplateRef } from
 import type { Building, RoundTally, CoalitionGroup, GameEvent } from "../types/game";
 import {
   parseEventSegments,
+  ensureEventEmoji,
   isSpendEvent,
   isEarnEvent,
   type EventTextSegment,
@@ -271,9 +272,7 @@ const eventSegmentsMap = computed(() => {
   const map = new Map<string, EventTextSegment[]>();
   const colorMap = effectiveBuildingColorMap.value;
   for (const event of props.events) {
-    const text = /^landlord\b/i.test(event.text)
-      ? event.text.charAt(0).toUpperCase() + event.text.slice(1)
-      : event.text;
+    const text = ensureEventEmoji(event.text, event.type, event.action?.type);
     map.set(event.id, parseEventSegments(text, props.buildings, colorMap, event.buildingId));
   }
   return map;
@@ -336,66 +335,68 @@ const eventSegmentsMap = computed(() => {
           </div>
         </div>
 
-        <!-- Bullet list of events: general events are grey/blue, spending money is red, earning money is green -->
-        <ul
-          v-if="filteredEvents && filteredEvents.length > 0"
-          ref="eventsListRef"
-          class="events-list"
-        >
-          <li
-            v-for="event in filteredEvents"
-            :key="event.id"
-            class="event-bullet-item"
-            :class="{ 'is-spend': isSpendEvent(event), 'is-earn': isEarnEvent(event) }"
+        <!-- Events content kept expanded to max height -->
+        <div class="events-content">
+          <!-- Bullet list of events: general events are grey/blue, spending money is red, earning money is green -->
+          <ul
+            v-if="filteredEvents && filteredEvents.length > 0"
+            ref="eventsListRef"
+            class="events-list"
           >
-            <span v-if="event.round" class="event-round-tag" :title="`Round ${event.round}`">
-              R{{ event.round }}
-            </span>
-            <span class="event-text">
-              <template
-                v-for="(seg, sIdx) in eventSegmentsMap.get(event.id) ?? [
-                  {
-                    text: /^landlord\b/i.test(event.text)
-                      ? event.text.charAt(0).toUpperCase() + event.text.slice(1)
-                      : event.text,
-                    isBuilding: false,
-                  },
-                ]"
-                :key="sIdx"
-              >
-                <span
-                  v-if="seg.isBuilding"
-                  class="event-building-name"
-                  :style="{ color: seg.color }"
-                  >{{ seg.text }}</span
-                >
-                <template v-else>{{ seg.text }}</template>
-              </template>
-            </span>
-            <button
-              type="button"
-              class="event-undo-btn event-remove-btn"
-              title="Undo event"
-              :aria-label="`Undo ${event.text}`"
-              @click="handleRequestUndo(event)"
+            <li
+              v-for="event in filteredEvents"
+              :key="event.id"
+              class="event-bullet-item"
+              :class="{ 'is-spend': isSpendEvent(event), 'is-earn': isEarnEvent(event) }"
             >
-              <Undo2 :size="11" :stroke-width="1.8" />
-            </button>
-          </li>
-        </ul>
-        <p v-else class="events-empty-hint">
-          {{
-            events && events.length > 0 ? "No events in selected round." : "No events recorded yet."
-          }}
-        </p>
-
+              <span v-if="event.round" class="event-round-tag" :title="`Round ${event.round}`">
+                R{{ event.round }}
+              </span>
+              <span class="event-text">
+                <template
+                  v-for="(seg, sIdx) in eventSegmentsMap.get(event.id) ?? [
+                    {
+                      text: ensureEventEmoji(event.text, event.type, event.action?.type),
+                      isBuilding: false,
+                    },
+                  ]"
+                  :key="sIdx"
+                >
+                  <span
+                    v-if="seg.isBuilding"
+                    class="event-building-name"
+                    :style="{ color: seg.color }"
+                    >{{ seg.text }}</span
+                  >
+                  <template v-else>{{ seg.text }}</template>
+                </template>
+              </span>
+              <button
+                type="button"
+                class="event-undo-btn event-remove-btn"
+                title="Undo event"
+                :aria-label="`Undo ${event.text}`"
+                @click="handleRequestUndo(event)"
+              >
+                <Undo2 :size="11" :stroke-width="1.8" />
+              </button>
+            </li>
+          </ul>
+          <p v-else class="events-empty-hint">
+            {{
+              events && events.length > 0
+                ? "No events in selected round."
+                : "No events recorded yet."
+            }}
+          </p>
+        </div>
         <!-- Input to record a new event -->
         <form class="event-input-form" @submit.prevent="handleAddEvent">
           <input
             v-model="newEventText"
             type="text"
             class="event-input"
-            placeholder="Record event... (e.g. Landlord spends 50k)"
+            placeholder="Record event... (e.g. 💸 Landlord spends 50k)"
             aria-label="Record event"
           />
           <button
@@ -930,7 +931,7 @@ const eventSegmentsMap = computed(() => {
 }
 
 .events-title {
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -938,7 +939,7 @@ const eventSegmentsMap = computed(() => {
 }
 
 .events-count {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 800;
   background-color: #e2e8f0;
   color: #334155;
@@ -985,12 +986,21 @@ const eventSegmentsMap = computed(() => {
   font-weight: 700;
 }
 
+/* Events content area kept expanded to max height */
+.events-content {
+  height: 150px;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Event bullet list items: general events are grey/blue, spending money is red */
 .events-list {
   list-style-type: disc;
   margin: 0;
   padding-left: 18px;
   color: #475569;
+  height: 100%;
   max-height: 150px;
   overflow-y: auto;
   display: flex;
@@ -1000,7 +1010,7 @@ const eventSegmentsMap = computed(() => {
 
 .event-bullet-item {
   color: #475569;
-  font-size: 0.88rem;
+  font-size: 0.78rem;
   font-weight: 600;
   line-height: 1.35;
   word-break: break-word;
@@ -1054,7 +1064,7 @@ const eventSegmentsMap = computed(() => {
 }
 
 .events-round-select {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   padding: 1px 4px;
   border: 1px solid #d1c7b7;
@@ -1067,7 +1077,7 @@ const eventSegmentsMap = computed(() => {
 
 .event-round-tag {
   display: inline-block;
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   font-weight: 800;
   padding: 0 4px;
   margin-right: 5px;
@@ -1083,7 +1093,7 @@ const eventSegmentsMap = computed(() => {
   background: none;
   border: none;
   color: #a8a29e;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   line-height: 1;
   padding: 1px 4px;
   margin-left: 6px;
@@ -1105,11 +1115,16 @@ const eventSegmentsMap = computed(() => {
 }
 
 .events-empty-hint {
-  font-size: 0.76rem;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
   color: #a8a29e;
   font-style: italic;
-  margin: 2px 0;
-  padding-left: 2px;
+  margin: 0;
+  padding: 0 4px;
+  text-align: center;
 }
 
 /* Event input form */
@@ -1121,7 +1136,7 @@ const eventSegmentsMap = computed(() => {
 
 .event-input {
   flex: 1;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   padding: 5px 8px;
   border: 1px solid #d1c7b7;
   border-radius: 6px;
@@ -1144,7 +1159,7 @@ const eventSegmentsMap = computed(() => {
 }
 
 .event-add-btn {
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 700;
   padding: 5px 10px;
   background-color: #292524;

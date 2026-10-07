@@ -204,3 +204,90 @@ describe("game store event undo functionality", () => {
     expect(store.events.find((e) => e.id === coalitionEvent.id)).toBeUndefined();
   });
 });
+
+describe("game store setup defaults", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    if (typeof localStorage !== "undefined") {
+      localStorage.clear();
+    }
+  });
+
+  it("starts new games with the landlord building hidden", () => {
+    const store = useGameStore();
+
+    store.setupGame(5, 5);
+
+    expect(store.showLandlord).toBe(false);
+  });
+});
+
+describe("game store building architectural variety", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    if (typeof localStorage !== "undefined") {
+      localStorage.clear();
+    }
+  });
+
+  it("generates buildings with diverse roof types and balcony variations", () => {
+    const store = useGameStore();
+    store.setupGame(4, 6);
+
+    expect(store.buildings.length).toBe(4);
+    const roofs = store.buildings.map((b) => b.roofType);
+    const balconies = store.buildings.map((b) => b.hasBalcony);
+    const grassList = store.buildings.map((b) => b.hasGrass);
+
+    // Contains flat, pitched, and flat-chairs roofs
+    expect(roofs).toContain("flat");
+    expect(roofs).toContain("pitched");
+    expect(roofs).toContain("flat-chairs");
+
+    // Contains buildings both with and without balconies
+    expect(balconies).toContain(true);
+    expect(balconies).toContain(false);
+
+    // Contains buildings both with and without grass lawn
+    expect(grassList).toContain(true);
+    expect(grassList).toContain(false);
+  });
+
+  it("updates roof type and hasBalcony via adjustBuildingTenants", () => {
+    const store = useGameStore();
+    store.setupGame(2, 4);
+
+    const b1 = store.buildings[0]!;
+    store.adjustBuildingTenants(b1.id, 5, "Empire Heights", "#d97706", "flat-chairs", true, true);
+
+    expect(b1.label).toBe("Empire Heights");
+    expect(b1.color).toBe("#d97706");
+    expect(b1.roofType).toBe("flat-chairs");
+    expect(b1.hasBalcony).toBe(true);
+    expect(b1.hasGrass).toBe(true);
+  });
+
+  it("preserves instigator and existing union members and never reduces lower than is allowed", () => {
+    const store = useGameStore();
+    store.setupGame(2, 6);
+
+    const b1 = store.buildings[0]!;
+    // Instigator is 1 member. Let's make 2 other tenants join the union.
+    const nonInstigators = b1.tenants.filter((t) => !t.isInstigator);
+    nonInstigators[0]!.inUnion = true;
+    nonInstigators[1]!.inUnion = true;
+
+    // Total preserved: 1 instigator + 2 in union = 3
+    // Try to reduce to 1 (lower than allowed 3)
+    store.adjustBuildingTenants(b1.id, 1);
+
+    // Must be clamped to 3 (the allowed minimum to preserve instigator and union members)
+    expect(b1.tenants.length).toBe(3);
+    expect(b1.tenants.filter((t) => t.isInstigator).length).toBe(1);
+    expect(b1.tenants.filter((t) => t.inUnion && !t.isInstigator).length).toBe(2);
+
+    // Try to reduce to 0
+    store.adjustBuildingTenants(b1.id, 0);
+    expect(b1.tenants.length).toBe(3);
+  });
+});

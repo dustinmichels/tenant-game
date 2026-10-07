@@ -9,6 +9,12 @@ import {
   getCoalitionBuildingCount,
   isBuildingOrganized,
 } from "../coalitions";
+import {
+  colorDistance,
+  alterColorToBeDifferent,
+  computeCoalitionColor,
+  MIN_COALITION_COLOR_DISTANCE,
+} from "../colorTheory";
 import { useGameStore } from "../../stores/game";
 
 function makeBuilding(
@@ -214,5 +220,104 @@ describe("game store coalitionTenantsCount integration", () => {
     store.disconnectCoalition(store.coalitionConnections[0]!.id);
     expect(store.coalitionTenantsCount).toBe(0);
     expect(store.unionTenantsCount).toBe(6);
+  });
+});
+
+describe("Coalition color combination and collision avoidance", () => {
+  it("alters coalition color when the natural blend is too close to an existing building color", () => {
+    // b1 (Rose Red) + b2 (Royal Blue) naturally blends to a Fuchsia-like purple (#ab39c3)
+    // which has Delta E < 0.05 to Fuchsia (#c026d3)
+    const b1 = makeBuilding("b-1", 1, "#e11d48", 3);
+    const b2 = makeBuilding("b-2", 2, "#2563eb", 3);
+    const b3 = makeBuilding("b-3", 3, "#c026d3", 3);
+
+    const connections: CoalitionConnection[] = [{ id: "c1", sourceId: "b-1", targetId: "b-2" }];
+    const groups = computeCoalitionGroups([b1, b2, b3], connections);
+
+    expect(groups).toHaveLength(1);
+    const coalitionColor = groups[0]!.dominantColor;
+    expect(coalitionColor).toBeDefined();
+
+    // Must be distinct from b3 (Fuchsia) and constituent buildings
+    const distToB3 = colorDistance(coalitionColor, b3.color);
+    expect(distToB3).toBeGreaterThanOrEqual(MIN_COALITION_COLOR_DISTANCE);
+
+    const distToB1 = colorDistance(coalitionColor, b1.color);
+    expect(distToB1).toBeGreaterThanOrEqual(MIN_COALITION_COLOR_DISTANCE);
+
+    const distToB2 = colorDistance(coalitionColor, b2.color);
+    expect(distToB2).toBeGreaterThanOrEqual(MIN_COALITION_COLOR_DISTANCE);
+  });
+
+  it("alters subsequent coalition color when it would clash with an already existing coalition", () => {
+    // Two separate coalitions forming with the same color combination
+    const b1 = makeBuilding("b-1", 1, "#e11d48", 3);
+    const b2 = makeBuilding("b-2", 2, "#2563eb", 3);
+    const b3 = makeBuilding("b-3", 3, "#e11d48", 3);
+    const b4 = makeBuilding("b-4", 4, "#2563eb", 3);
+
+    const connections: CoalitionConnection[] = [
+      { id: "c1", sourceId: "b-1", targetId: "b-2" },
+      { id: "c2", sourceId: "b-3", targetId: "b-4" },
+    ];
+    const groups = computeCoalitionGroups([b1, b2, b3, b4], connections);
+
+    expect(groups).toHaveLength(2);
+    const c1Color = groups[0]!.dominantColor;
+    const c2Color = groups[1]!.dominantColor;
+
+    expect(c1Color).not.toBe(c2Color);
+    const distBetween = colorDistance(c1Color, c2Color);
+    expect(distBetween).toBeGreaterThanOrEqual(MIN_COALITION_COLOR_DISTANCE);
+  });
+
+  it("alters coalition color when two buildings with the identical color merge", () => {
+    const b1 = makeBuilding("b-1", 1, "#2563eb", 3);
+    const b2 = makeBuilding("b-2", 2, "#2563eb", 3);
+
+    const connections: CoalitionConnection[] = [{ id: "c1", sourceId: "b-1", targetId: "b-2" }];
+    const groups = computeCoalitionGroups([b1, b2], connections);
+
+    expect(groups).toHaveLength(1);
+    const coalitionColor = groups[0]!.dominantColor;
+
+    // Coalition color must be distinct from the original building color
+    const dist = colorDistance(coalitionColor, b1.color);
+    expect(dist).toBeGreaterThanOrEqual(MIN_COALITION_COLOR_DISTANCE);
+  });
+
+  it("preserves natural blend when no collision exists", () => {
+    // Rose Red (#e11d48) + Amber Gold (#d97706) naturally blend to Orange
+    const b1 = makeBuilding("b-1", 1, "#e11d48", 3);
+    const b2 = makeBuilding("b-2", 2, "#d97706", 3);
+
+    const connections: CoalitionConnection[] = [{ id: "c1", sourceId: "b-1", targetId: "b-2" }];
+    const groups = computeCoalitionGroups([b1, b2], connections);
+
+    expect(groups).toHaveLength(1);
+    const coalitionColor = groups[0]!.dominantColor;
+    expect(coalitionColor).toBe("#e2511e");
+  });
+
+  it("alterColorToBeDifferent returns baseColor when no existing colors are provided or already far enough", () => {
+    expect(alterColorToBeDifferent("#2563eb", [])).toBe("#2563eb");
+    expect(alterColorToBeDifferent("#2563eb", ["#e11d48"])).toBe("#2563eb");
+    expect(alterColorToBeDifferent("", ["#2563eb"])).toBe("#7c3aed");
+  });
+
+  it("alterColorToBeDifferent shifts hue/lightness to find a valid color above the threshold", () => {
+    const colliding = "#2563eb";
+    const altered = alterColorToBeDifferent(colliding, [colliding], 0.08);
+    expect(altered).not.toBe(colliding);
+    expect(colorDistance(altered, colliding)).toBeGreaterThanOrEqual(0.08);
+  });
+
+  it("computeCoalitionColor accepts existingColors parameter and alters color when clashing", () => {
+    const b1 = { id: "b1", color: "#e11d48" };
+    const b2 = { id: "b2", color: "#2563eb" };
+    // Natural blend is #ab39c3. Provide an existing building that has #ab39c3.
+    const result = computeCoalitionColor([b1, b2], [], ["#ab39c3"]);
+    expect(result).not.toBe("#ab39c3");
+    expect(colorDistance(result, "#ab39c3")).toBeGreaterThanOrEqual(MIN_COALITION_COLOR_DISTANCE);
   });
 });

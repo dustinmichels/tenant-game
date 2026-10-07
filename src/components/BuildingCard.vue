@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Building, Tenant, CoalitionGroup } from "../types/game";
+import type { Building, Tenant, CoalitionGroup, BuildingRoofType } from "../types/game";
 import { isBuildingOrganized, getBuildingUnionCount } from "../utils/coalitions";
 import { getTenantGridCols, PERSON_ASPECT_RATIO } from "../utils/layout";
 import { BASELINE_PERSON_WIDTH } from "../utils/sizing";
-import { roughGen, createSeed } from "../utils/rough";
+import { createSeed } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
 import { getContrastTextColor } from "../utils/colorTheory";
+import {
+  getRoofHeight,
+  getDefaultBuildingRoofType,
+  getDefaultBuildingHasBalcony,
+  getDefaultBuildingHasGrass,
+  generateRoofPaths,
+  generateFrontLawnPaths,
+} from "../utils/buildingArchitecture";
 import RoughBox from "./RoughBox.vue";
 import BuildingWindow from "./BuildingWindow.vue";
 import { Pencil, Cable, GripVertical } from "lucide-vue-next";
-
 const props = withDefaults(
   defineProps<{
     building: Building;
@@ -116,26 +123,70 @@ const cardWidth = computed(() => {
   return Math.max(contentWidth, 144);
 });
 
-// Streamlined minimal rooftop parapet and cornice
+const effectiveRoofType = computed<BuildingRoofType>(() => {
+  return props.building.roofType ?? getDefaultBuildingRoofType(props.building.index);
+});
+
+const roofHeight = computed(() => getRoofHeight(effectiveRoofType.value));
+
 const roofPaths = computed<PathInfo[]>(() => {
-  const s = buildingSeed.value;
-  const cornice = roughGen.line(0, 8, 280, 8, {
-    roughness: 0.5,
-    stroke: "#4a3d2c",
-    strokeWidth: 1.2,
-    seed: s + 10,
-  });
+  return generateRoofPaths(
+    effectiveRoofType.value,
+    cardWidth.value,
+    roofHeight.value,
+    buildingSeed.value + 10,
+    outlineColor.value,
+    isOrganized.value,
+  );
+});
+const tenantRows = computed(() =>
+  Math.max(1, Math.ceil(props.building.tenants.length / gridColumns.value)),
+);
+const effectiveHasBalcony = computed(() => {
+  return props.building.hasBalcony ?? getDefaultBuildingHasBalcony(props.building.index);
+});
 
-  const parapet = roughGen.rectangle(4, 2, 272, 6, {
-    roughness: 0.45,
-    stroke: "#695844",
-    fill: "#dfd7c9",
-    fillStyle: "solid",
-    strokeWidth: 1.0,
-    seed: s + 11,
-  });
+function shouldShowBalcony(idx: number): boolean {
+  if (!effectiveHasBalcony.value) return false;
+  if (tenantRows.value >= 2) {
+    return Math.floor(idx / gridColumns.value) === 0;
+  }
+  return true;
+}
 
-  return [cornice, parapet].flatMap((d) => roughGen.toPaths(d));
+const effectiveHasGrass = computed(() => {
+  return props.building.hasGrass ?? getDefaultBuildingHasGrass(props.building.index);
+});
+
+const lawnPaths = computed<PathInfo[]>(() => {
+  if (!effectiveHasGrass.value) return [];
+  return generateFrontLawnPaths(
+    cardWidth.value,
+    buildingSeed.value + 500,
+    outlineColor.value,
+    isOrganized.value,
+  );
+});
+
+const dragHandleTop = computed(() => {
+  if (effectiveRoofType.value === "pitched") return -18;
+  if (effectiveRoofType.value === "mansard") return -15;
+  if (effectiveRoofType.value === "flat-chairs") return -15;
+  return -13;
+});
+
+const settingsBtnTop = computed(() => {
+  if (effectiveRoofType.value === "pitched") return 22;
+  if (effectiveRoofType.value === "mansard") return 16;
+  if (effectiveRoofType.value === "flat-chairs") return 18;
+  return -10;
+});
+
+const pinBtnTop = computed(() => {
+  if (effectiveRoofType.value === "pitched") return 22;
+  if (effectiveRoofType.value === "mansard") return 16;
+  if (effectiveRoofType.value === "flat-chairs") return 18;
+  return -10;
 });
 </script>
 
@@ -162,7 +213,10 @@ const roofPaths = computed<PathInfo[]>(() => {
         v-if="isEditable"
         type="button"
         class="building-settings-btn"
-        title="Edit building (name, color, tenants)"
+        :style="{
+          top: `${settingsBtnTop}px`,
+        }"
+        title="Edit building (name, color, tenants, architecture)"
         :aria-label="`Edit settings for ${building.label}`"
         @pointerdown.stop
         @click.stop="emit('adjust-tenants', building)"
@@ -181,7 +235,7 @@ const roofPaths = computed<PathInfo[]>(() => {
       }"
       :disabled="!hasBegun"
       :style="{
-        borderColor: hasBegun ? activeColor : '#d1c7b7',
+        top: `${pinBtnTop}px`,
         backgroundColor: !hasBegun ? '#f4ece1' : isInCoalition ? activeColor : '#fffdfa',
         color: !hasBegun ? '#a89f91' : isInCoalition ? '#ffffff' : activeColor,
       }"
@@ -208,6 +262,9 @@ const roofPaths = computed<PathInfo[]>(() => {
         v-if="isEditable"
         type="button"
         class="building-drag-handle"
+        :style="{
+          top: `${dragHandleTop}px`,
+        }"
         title="Drag to move building"
         aria-label="Drag to move building"
         @pointerdown.stop.prevent="handleDragPointerDown"
@@ -216,6 +273,29 @@ const roofPaths = computed<PathInfo[]>(() => {
         <span class="drag-label">Move</span>
       </button>
     </transition>
+
+    <!-- Rooftop architectural structure (draggable) -->
+    <div
+      class="building-roof-area"
+      :class="{ 'is-draggable': isEditable, [`is-${effectiveRoofType}`]: true }"
+      :style="{
+        width: `${cardWidth}px`,
+        height: `${roofHeight}px`,
+      }"
+      @pointerdown="handleDragPointerDown"
+    >
+      <svg :viewBox="`0 0 ${cardWidth} ${roofHeight}`" class="roof-rough-svg" aria-hidden="true">
+        <path
+          v-for="(p, idx) in roofPaths"
+          :key="idx"
+          :d="p.d"
+          :stroke="p.stroke"
+          :stroke-width="p.strokeWidth"
+          :fill="p.fill || 'none'"
+        />
+      </svg>
+    </div>
+
     <RoughBox
       :stroke="outlineColor"
       :fill="'#f5efe4'"
@@ -225,32 +305,9 @@ const roofPaths = computed<PathInfo[]>(() => {
       :stroke-width="isOrganized ? 2.5 : 2"
       :seed="buildingSeed"
       class="building-rough-box"
+      :style="{ width: `${cardWidth}px` }"
     >
       <div class="building-card-inner">
-        <!-- Streamlined Rooftop architectural trim (draggable) -->
-        <div
-          class="building-roof-area"
-          :class="{ 'is-draggable': isEditable }"
-          :title="isEditable ? 'Drag to move building' : undefined"
-          @pointerdown="handleDragPointerDown"
-        >
-          <svg
-            viewBox="0 0 280 10"
-            class="roof-rough-svg"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            <path
-              v-for="(p, idx) in roofPaths"
-              :key="idx"
-              :d="p.d"
-              :stroke="p.stroke"
-              :stroke-width="p.strokeWidth"
-              :fill="p.fill"
-            />
-          </svg>
-        </div>
-
         <!-- Header status strip: color dot, union ratio, organized indicator -->
         <div class="building-header-status">
           <div
@@ -305,6 +362,7 @@ const roofPaths = computed<PathInfo[]>(() => {
             :in-union="hasBegun && Boolean(tenant.inUnion)"
             :is-evicted="hasBegun && Boolean(tenant.isEvicted)"
             :has-begun="hasBegun"
+            :has-balcony="shouldShowBalcony(idx)"
             @select="handleTenantClick($event, tenant)"
             @contextmenu="handleTenantClick($event, tenant)"
           />
@@ -326,6 +384,29 @@ const roofPaths = computed<PathInfo[]>(() => {
         </div>
       </div>
     </RoughBox>
+
+    <!-- Front lawn with grass (if building has grass) -->
+    <div
+      v-if="effectiveHasGrass"
+      class="building-front-lawn-area"
+      :class="{ 'is-draggable': isEditable }"
+      :style="{
+        width: `${cardWidth}px`,
+        height: '20px',
+      }"
+      @pointerdown="handleDragPointerDown"
+    >
+      <svg :viewBox="`0 0 ${cardWidth} 20`" class="front-lawn-svg" aria-hidden="true">
+        <path
+          v-for="(p, idx) in lawnPaths"
+          :key="idx"
+          :d="p.d"
+          :stroke="p.stroke"
+          :stroke-width="p.strokeWidth"
+          :fill="p.fill || 'none'"
+        />
+      </svg>
+    </div>
   </div>
 </template>
 
@@ -554,11 +635,15 @@ const roofPaths = computed<PathInfo[]>(() => {
   filter: drop-shadow(0 0 3px var(--building-accent)) drop-shadow(0 0 9px var(--building-accent))
     drop-shadow(0 0 18px color-mix(in srgb, var(--building-accent) 65%, transparent));
 }
+.building-card-wrapper.is-building-organized .roof-rough-svg {
+  filter: drop-shadow(0 0 2px var(--building-accent));
+}
 
 .building-card-inner {
   display: flex;
   flex-direction: column;
   width: 100%;
+  position: relative;
   padding-top: 2px;
   padding-bottom: 2px;
 }
@@ -566,11 +651,10 @@ const roofPaths = computed<PathInfo[]>(() => {
 /* Rooftop */
 .building-roof-area {
   position: relative;
-  width: 100%;
-  height: 8px;
   overflow: visible;
   cursor: default;
   touch-action: none;
+  margin-bottom: -1px;
 }
 
 .building-roof-area.is-draggable {
@@ -585,6 +669,8 @@ const roofPaths = computed<PathInfo[]>(() => {
   width: 100%;
   height: 100%;
   display: block;
+  overflow: visible;
+  transition: filter 0.25s ease;
 }
 
 /* Header status strip */
@@ -756,5 +842,35 @@ const roofPaths = computed<PathInfo[]>(() => {
 .building-drag-handle.edit-control-pop-leave-to {
   opacity: 0;
   transform: translateX(-50%) scale(0.4);
+}
+
+/* Front lawn */
+.building-front-lawn-area {
+  position: relative;
+  margin-top: -2px;
+  overflow: visible;
+  cursor: default;
+  touch-action: none;
+  user-select: none;
+}
+
+.building-front-lawn-area.is-draggable {
+  cursor: grab;
+}
+
+.building-front-lawn-area.is-draggable:active {
+  cursor: grabbing;
+}
+
+.front-lawn-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  transition: filter 0.25s ease;
+}
+
+.building-card-wrapper.is-building-organized .front-lawn-svg {
+  filter: drop-shadow(0 0 2px var(--building-accent));
 }
 </style>

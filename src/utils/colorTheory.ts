@@ -262,8 +262,85 @@ const deltaEOklab = differenceEuclidean("oklab");
 /**
  * Calculates the perceptual color distance (Delta E) in OKLab space using culori.
  */
-function colorDistance(color1: string, color2: string): number {
+export function colorDistance(color1: string, color2: string): number {
   return deltaEOklab(color1, color2) ?? 0;
+}
+
+/**
+ * Minimum perceptual distance (Delta E in OKLab) required between a coalition color
+ * and any existing building or coalition color.
+ */
+export const MIN_COALITION_COLOR_DISTANCE = 0.08;
+
+/**
+ * Checks whether a candidate color is too close to any existing building or coalition color.
+ * If too close (Delta E < minThreshold), alters it in OKLCH space (adjusting hue and/or lightness)
+ * to maximize separation from all existing colors while staying as close as possible to the
+ * original blend character and maintaining sRGB gamut compliance and vibrancy.
+ *
+ * @param candidateColor The color to check (hex string)
+ * @param existingColors Array of existing building or coalition colors to compare against
+ * @param minThreshold Minimum Delta E required (defaults to MIN_COALITION_COLOR_DISTANCE = 0.08)
+ * @returns The original candidateColor if far enough away, or an altered distinct color
+ */
+export function alterColorToBeDifferent(
+  candidateColor: string,
+  existingColors: string[],
+  minThreshold: number = MIN_COALITION_COLOR_DISTANCE,
+): string {
+  if (!candidateColor) return DEFAULT_COLOR;
+  const base = oklch(candidateColor);
+  if (!base) return candidateColor;
+
+  if (!existingColors || existingColors.length === 0) return candidateColor;
+
+  const validExisting = existingColors.filter(
+    (c) => typeof c === "string" && c.trim().length > 0 && Boolean(oklch(c)),
+  );
+  if (validExisting.length === 0) return candidateColor;
+
+  const minCurrentDist = Math.min(...validExisting.map((c) => colorDistance(candidateColor, c)));
+  if (minCurrentDist >= minThreshold) {
+    return candidateColor;
+  }
+
+  const baseL = base.l ?? 0.6;
+  const baseC = Math.max(0.12, base.c ?? 0.18);
+  const baseH = base.h ?? 0;
+
+  let bestCandidate = candidateColor;
+  let bestDist = minCurrentDist;
+
+  // Expanding hue shifts in alternating directions (+10°, -10°, +20°, -20°, ... up to 180°)
+  const hueShifts = [0];
+  for (let step = 10; step <= 180; step += 10) {
+    hueShifts.push(step, -step);
+  }
+  const lAdjustments = [0, 0.06, -0.06, 0.12, -0.12, 0.18, -0.18];
+
+  for (const hShift of hueShifts) {
+    for (const lAdj of lAdjustments) {
+      if (hShift === 0 && lAdj === 0) continue;
+
+      const newH = (((baseH + hShift) % 360) + 360) % 360;
+      const newL = Math.max(0.35, Math.min(0.85, baseL + lAdj));
+      const candHex = formatHex(
+        clampChroma({ mode: "oklch", l: newL, c: baseC, h: newH }, "oklch"),
+      );
+      if (!candHex) continue;
+
+      const dist = Math.min(...validExisting.map((c) => colorDistance(candHex, c)));
+      if (dist >= minThreshold) {
+        return candHex;
+      }
+      if (dist > bestDist) {
+        bestDist = dist;
+        bestCandidate = candHex;
+      }
+    }
+  }
+
+  return bestCandidate;
 }
 
 /**
@@ -326,52 +403,65 @@ export function getBuildingStartingColor(
  * Ensures primary pairs blend into their expected secondary colors (e.g., Yellow + Blue -> Green,
  * rather than crossing the magenta/red boundary). Always clamps chroma to prevent sRGB clipping distortion.
  */
-function combineTwoColors(colorA: string, colorB: string, weightA = 0.5, weightB = 0.5): string {
+export function combineTwoColors(
+  colorA: string,
+  colorB: string,
+  weightA = 0.5,
+  weightB = 0.5,
+  existingColors?: string[],
+): string {
   const cA = oklch(colorA);
   const cB = oklch(colorB);
 
-  if (!cA && !cB) return DEFAULT_COLOR;
-  if (!cA) return formatHex(clampChroma(cB!, "oklch")) ?? DEFAULT_COLOR;
-  if (!cB) return formatHex(clampChroma(cA!, "oklch")) ?? DEFAULT_COLOR;
+  let blendedHex: string;
+  if (!cA && !cB) blendedHex = DEFAULT_COLOR;
+  else if (!cA) blendedHex = formatHex(clampChroma(cB!, "oklch")) ?? DEFAULT_COLOR;
+  else if (!cB) blendedHex = formatHex(clampChroma(cA!, "oklch")) ?? DEFAULT_COLOR;
+  else {
+    const totalW = Math.max(0, weightA) + Math.max(0, weightB) || 1;
+    const t = Math.max(0, weightB) / totalW;
 
-  const totalW = Math.max(0, weightA) + Math.max(0, weightB) || 1;
-  const t = Math.max(0, weightB) / totalW;
+    let overrides: { h?: { fixup: typeof fixupHueLonger } } | undefined = undefined;
+    if (cA.h !== undefined && cB.h !== undefined) {
+      const h1 = ((cA.h % 360) + 360) % 360;
+      const h2 = ((cB.h % 360) + 360) % 360;
 
-  let overrides: { h?: { fixup: typeof fixupHueLonger } } | undefined = undefined;
-  if (cA.h !== undefined && cB.h !== undefined) {
-    const h1 = ((cA.h % 360) + 360) % 360;
-    const h2 = ((cB.h % 360) + 360) % 360;
+      // Detect if one color is in the Yellow family (~40°..120°) and the other in the Blue family (~200°..285°)
+      const isYellow1 = h1 >= 40 && h1 <= 120;
+      const isYellow2 = h2 >= 40 && h2 <= 120;
+      const isBlue1 = h1 >= 200 && h1 <= 285;
+      const isBlue2 = h2 >= 200 && h2 <= 285;
 
-    // Detect if one color is in the Yellow family (~40°..120°) and the other in the Blue family (~200°..285°)
-    const isYellow1 = h1 >= 40 && h1 <= 120;
-    const isYellow2 = h2 >= 40 && h2 <= 120;
-    const isBlue1 = h1 >= 200 && h1 <= 285;
-    const isBlue2 = h2 >= 200 && h2 <= 285;
-
-    if ((isYellow1 && isBlue2) || (isYellow2 && isBlue1)) {
-      const hYellow = isYellow1 ? h1 : h2;
-      const hBlue = isBlue1 ? h1 : h2;
-      // If the direct arc from yellow to blue through green is > 180°, default shortest-arc
-      // would traverse magenta. Force interpolation through the longer arc so Yellow + Blue -> Green.
-      if (hBlue - hYellow > 180) {
-        overrides = { h: { fixup: fixupHueLonger } };
+      if ((isYellow1 && isBlue2) || (isYellow2 && isBlue1)) {
+        const hYellow = isYellow1 ? h1 : h2;
+        const hBlue = isBlue1 ? h1 : h2;
+        // If the direct arc from yellow to blue through green is > 180°, default shortest-arc
+        // would traverse magenta. Force interpolation through the longer arc so Yellow + Blue -> Green.
+        if (hBlue - hYellow > 180) {
+          overrides = { h: { fixup: fixupHueLonger } };
+        }
       }
+    }
+
+    try {
+      // @types/culori requires all channel keys (l, c, h) for partial overrides
+      const it = interpolate(
+        [colorA, colorB],
+        "oklch",
+        overrides as unknown as Parameters<typeof interpolate>[2],
+      );
+      const blended = it(t);
+      const inGamut = clampChroma(blended, "oklch");
+      blendedHex = formatHex(inGamut) ?? DEFAULT_COLOR;
+    } catch {
+      blendedHex = DEFAULT_COLOR;
     }
   }
 
-  try {
-    // @types/culori requires all channel keys (l, c, h) for partial overrides
-    const it = interpolate(
-      [colorA, colorB],
-      "oklch",
-      overrides as unknown as Parameters<typeof interpolate>[2],
-    );
-    const blended = it(t);
-    const inGamut = clampChroma(blended, "oklch");
-    return formatHex(inGamut) ?? DEFAULT_COLOR;
-  } catch {
-    return DEFAULT_COLOR;
+  if (existingColors && existingColors.length > 0) {
+    return alterColorToBeDifferent(blendedHex, existingColors);
   }
+  return blendedHex;
 }
 
 /**
@@ -449,64 +539,84 @@ function mergeColors(colors: string[], weights?: number[]): string {
 export function computeCoalitionColor(
   buildings: Array<{ id: string; color: string }>,
   connections: Array<{ sourceId: string; targetId: string; createdAt?: number }> = [],
+  existingColorsOrOptions?: string[] | { existingColors?: string[]; minDistance?: number },
 ): string {
   if (buildings.length === 0) return DEFAULT_COLOR;
   if (buildings.length === 1) return buildings[0]!.color;
-  if (buildings.length === 2) return combineTwoColors(buildings[0]!.color, buildings[1]!.color);
 
-  const buildingMap = new Map<string, { id: string; color: string }>();
-  for (const b of buildings) {
-    buildingMap.set(b.id, b);
-  }
-
-  // Union-find tracking component size and merged color
-  const parent = new Map<string, string>();
-  const compData = new Map<string, { size: number; color: string }>();
-
-  for (const b of buildings) {
-    parent.set(b.id, b.id);
-    compData.set(b.id, { size: 1, color: b.color });
-  }
-
-  function find(id: string): string {
-    let p = parent.get(id) || id;
-    while (p !== (parent.get(p) || p)) {
-      p = parent.get(p) || p;
+  let rawColor: string;
+  if (buildings.length === 2) {
+    rawColor = combineTwoColors(buildings[0]!.color, buildings[1]!.color);
+  } else {
+    const buildingMap = new Map<string, { id: string; color: string }>();
+    for (const b of buildings) {
+      buildingMap.set(b.id, b);
     }
-    return p;
+
+    // Union-find tracking component size and merged color
+    const parent = new Map<string, string>();
+    const compData = new Map<string, { size: number; color: string }>();
+
+    for (const b of buildings) {
+      parent.set(b.id, b.id);
+      compData.set(b.id, { size: 1, color: b.color });
+    }
+
+    function find(id: string): string {
+      let p = parent.get(id) || id;
+      while (p !== (parent.get(p) || p)) {
+        p = parent.get(p) || p;
+      }
+      return p;
+    }
+
+    function union(idA: string, idB: string): void {
+      const rootA = find(idA);
+      const rootB = find(idB);
+      if (rootA === rootB) return;
+
+      const dataA = compData.get(rootA)!;
+      const dataB = compData.get(rootB)!;
+
+      const newColor = combineTwoColors(dataA.color, dataB.color, dataA.size, dataB.size);
+      const newSize = dataA.size + dataB.size;
+
+      parent.set(rootB, rootA);
+      compData.set(rootA, { size: newSize, color: newColor });
+    }
+
+    const sortedConns = [...connections]
+      .filter((c) => buildingMap.has(c.sourceId) && buildingMap.has(c.targetId))
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+    for (const c of sortedConns) {
+      union(c.sourceId, c.targetId);
+    }
+
+    const firstRoot = find(buildings[0]!.id);
+    const result = compData.get(firstRoot);
+    if (result && result.size === buildings.length) {
+      rawColor = result.color;
+    } else {
+      // Fallback if connections didn't span every building: merge all constituent colors
+      rawColor = mergeColors(buildings.map((b) => b.color));
+    }
   }
 
-  function union(idA: string, idB: string): void {
-    const rootA = find(idA);
-    const rootB = find(idB);
-    if (rootA === rootB) return;
+  let existingList: string[] = [];
+  let minDistance = MIN_COALITION_COLOR_DISTANCE;
 
-    const dataA = compData.get(rootA)!;
-    const dataB = compData.get(rootB)!;
-
-    const newColor = combineTwoColors(dataA.color, dataB.color, dataA.size, dataB.size);
-    const newSize = dataA.size + dataB.size;
-
-    parent.set(rootB, rootA);
-    compData.set(rootA, { size: newSize, color: newColor });
+  if (Array.isArray(existingColorsOrOptions)) {
+    existingList = existingColorsOrOptions;
+  } else if (existingColorsOrOptions && typeof existingColorsOrOptions === "object") {
+    existingList = existingColorsOrOptions.existingColors ?? [];
+    minDistance = existingColorsOrOptions.minDistance ?? MIN_COALITION_COLOR_DISTANCE;
   }
 
-  const sortedConns = [...connections]
-    .filter((c) => buildingMap.has(c.sourceId) && buildingMap.has(c.targetId))
-    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  // Ensure candidate color is distinct from all existing colors and constituent buildings
+  const colorsToAvoid = [...buildings.map((b) => b.color), ...existingList];
 
-  for (const c of sortedConns) {
-    union(c.sourceId, c.targetId);
-  }
-
-  const firstRoot = find(buildings[0]!.id);
-  const result = compData.get(firstRoot);
-  if (result && result.size === buildings.length) {
-    return result.color;
-  }
-
-  // Fallback if connections didn't span every building: merge all constituent colors
-  return mergeColors(buildings.map((b) => b.color));
+  return alterColorToBeDifferent(rawColor, colorsToAvoid, minDistance);
 }
 
 /**

@@ -386,7 +386,7 @@ watch(
                   <span class="quick-dice-label">Quick add:</span>
                   <div class="quick-dice-buttons">
                     <button
-                      v-for="val in [1, 2, 3, 4, 5, 6, 7, 8]"
+                      v-for="val in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"
                       :key="val"
                       type="button"
                       class="quick-die-btn"
@@ -397,7 +397,6 @@ watch(
                     </button>
                   </div>
                 </div>
-
                 <button type="button" class="add-box-btn" @click="addBox">+ Add box</button>
               </div>
             </div>
@@ -823,11 +822,13 @@ watch(
 .quick-dice-buttons {
   display: flex;
   gap: 4px;
+  flex-wrap: wrap;
 }
 
 .quick-die-btn {
   width: 26px;
   height: 26px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;

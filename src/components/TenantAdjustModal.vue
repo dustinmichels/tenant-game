@@ -3,13 +3,17 @@ import { ref, computed, watch } from "vue";
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent, DialogTitle } from "reka-ui";
 import { Dices, X, CornerDownLeft } from "lucide-vue-next";
 import { useEventListener } from "@vueuse/core";
-import type { Building } from "../types/game";
+import type { Building, BuildingRoofType } from "../types/game";
 import { BUILDING_COLORS } from "../types/game";
 import { getBuildingColor } from "../utils/coalitions";
 import { getRandomPrimaryColor } from "../utils/colorTheory";
+import {
+  getDefaultBuildingRoofType,
+  getDefaultBuildingHasBalcony,
+  getDefaultBuildingHasGrass,
+} from "../utils/buildingArchitecture";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
-
 const props = defineProps<{
   show: boolean;
   building: Building | null;
@@ -19,7 +23,18 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "close"): void;
-  (e: "save", buildingId: string, settings: { count: number; label: string; color: string }): void;
+  (
+    e: "save",
+    buildingId: string,
+    settings: {
+      count: number;
+      label: string;
+      color: string;
+      roofType: BuildingRoofType;
+      hasBalcony: boolean;
+      hasGrass: boolean;
+    },
+  ): void;
   (e: "save", buildingId: string, count: number): void;
 }>();
 
@@ -30,10 +45,25 @@ const defaultColor = computed(() => {
   return getBuildingColor(props.building.index, props.totalBuildings);
 });
 
+const minAllowed = computed(() => {
+  if (!props.building) return 1;
+  const preservedCount = props.building.tenants.filter((t) => t.isInstigator || t.inUnion).length;
+  return Math.max(1, preservedCount);
+});
+
+const showPreservationWarning = ref(false);
 const countInput = ref(props.building?.tenants.length ?? props.defaultPeople);
 const nameInput = ref(props.building?.label ?? "");
 const colorInput = ref(props.building?.color ?? "#2563eb");
-
+const roofInput = ref<BuildingRoofType>(
+  props.building?.roofType ?? getDefaultBuildingRoofType(props.building?.index ?? 1),
+);
+const hasBalconyInput = ref<boolean>(
+  props.building?.hasBalcony ?? getDefaultBuildingHasBalcony(props.building?.index ?? 1),
+);
+const hasGrassInput = ref<boolean>(
+  props.building?.hasGrass ?? getDefaultBuildingHasGrass(props.building?.index ?? 1),
+);
 watch(
   () => [props.show, props.building],
   () => {
@@ -41,17 +71,42 @@ watch(
       countInput.value = props.building.tenants.length;
       nameInput.value = props.building.label || defaultBuildingName.value;
       colorInput.value = props.building.color || defaultColor.value;
+      roofInput.value = props.building.roofType ?? getDefaultBuildingRoofType(props.building.index);
+      hasBalconyInput.value =
+        props.building.hasBalcony ?? getDefaultBuildingHasBalcony(props.building.index);
+      hasGrassInput.value =
+        props.building.hasGrass ?? getDefaultBuildingHasGrass(props.building.index);
+      showPreservationWarning.value = false;
     }
   },
   { immediate: true },
 );
 
+watch(countInput, (val) => {
+  if (!props.show) return;
+  if (typeof val === "number" && !Number.isNaN(val)) {
+    if (val < minAllowed.value) {
+      showPreservationWarning.value = true;
+    } else {
+      showPreservationWarning.value = false;
+    }
+  }
+});
+
 function increment() {
-  countInput.value = Math.min(100, countInput.value + 1);
+  countInput.value = Math.min(100, (Number(countInput.value) || 0) + 1);
+  if (countInput.value >= minAllowed.value) {
+    showPreservationWarning.value = false;
+  }
 }
 
 function decrement() {
-  countInput.value = Math.max(1, countInput.value - 1);
+  if (countInput.value <= minAllowed.value) {
+    showPreservationWarning.value = true;
+    return;
+  }
+  countInput.value = countInput.value - 1;
+  showPreservationWarning.value = false;
 }
 
 function resetNameToDefault() {
@@ -67,7 +122,33 @@ function pickRandomPrimary() {
 }
 
 function resetTenantsToDefault() {
-  countInput.value = Math.max(1, props.defaultPeople);
+  if (props.defaultPeople < minAllowed.value) {
+    countInput.value = minAllowed.value;
+    showPreservationWarning.value = true;
+  } else {
+    countInput.value = props.defaultPeople;
+    showPreservationWarning.value = false;
+  }
+}
+
+function handleNumberKeydown(e: KeyboardEvent) {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    handleSave();
+  } else if (e.key === "ArrowDown" && countInput.value <= minAllowed.value) {
+    showPreservationWarning.value = true;
+  }
+}
+
+function handleNumberBlur() {
+  if (
+    typeof countInput.value !== "number" ||
+    Number.isNaN(countInput.value) ||
+    countInput.value < minAllowed.value
+  ) {
+    showPreservationWarning.value = true;
+    countInput.value = minAllowed.value;
+  }
 }
 
 function handleHexInput(e: Event) {
@@ -82,8 +163,18 @@ function handleHexInput(e: Event) {
 
 function handleSave() {
   if (props.building) {
+    if (
+      typeof countInput.value !== "number" ||
+      Number.isNaN(countInput.value) ||
+      countInput.value < minAllowed.value
+    ) {
+      showPreservationWarning.value = true;
+      countInput.value = minAllowed.value;
+      return;
+    }
+
     const finalCount = Math.max(
-      1,
+      minAllowed.value,
       Math.min(100, Math.round(countInput.value) || props.defaultPeople),
     );
     const finalLabel = nameInput.value.trim() || defaultBuildingName.value;
@@ -93,6 +184,9 @@ function handleSave() {
       count: finalCount,
       label: finalLabel,
       color: finalColor,
+      roofType: roofInput.value,
+      hasBalcony: hasBalconyInput.value,
+      hasGrass: hasGrassInput.value,
     });
     emit("close");
   }
@@ -206,7 +300,7 @@ useEventListener(window, "keydown", handleModalKeydown);
                   <button
                     type="button"
                     class="reset-shortcut-btn"
-                    :disabled="countInput === defaultPeople"
+                    :disabled="countInput === defaultPeople || defaultPeople < minAllowed"
                     @click="resetTenantsToDefault"
                   >
                     ↺ Default ({{ defaultPeople }})
@@ -221,7 +315,7 @@ useEventListener(window, "keydown", handleModalKeydown);
                     variant="secondary"
                     :seed="720"
                     class="stepper-btn"
-                    :disabled="countInput <= 1"
+                    aria-label="Decrease tenants"
                     @click="decrement"
                   >
                     <span class="stepper-sym">−</span>
@@ -231,10 +325,11 @@ useEventListener(window, "keydown", handleModalKeydown);
                     <input
                       v-model.number="countInput"
                       type="number"
-                      min="1"
+                      :min="minAllowed"
                       max="100"
                       class="number-field"
-                      @keydown.enter.prevent="handleSave"
+                      @keydown="handleNumberKeydown"
+                      @blur="handleNumberBlur"
                     />
                     <span class="units-label">Tenants</span>
                   </div>
@@ -250,7 +345,7 @@ useEventListener(window, "keydown", handleModalKeydown);
                   </RoughButton>
                 </div>
 
-                <div class="preservation-note">
+                <div v-if="showPreservationWarning" class="preservation-note">
                   <span class="note-icon">ℹ</span>
                   <span
                     >The instigator (★) and existing union members will be preserved if you reduce
@@ -338,6 +433,109 @@ useEventListener(window, "keydown", handleModalKeydown);
                       @input="handleHexInput"
                       @keydown.enter.prevent="handleSave"
                     />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Section 4: Display Settings (Roof Type, Balconies, Front Lawn) -->
+              <div class="form-section">
+                <div class="display-field" style="margin-bottom: 10px">
+                  <label class="field-label">Roof Type</label>
+                  <div class="toggle-group" role="radiogroup" aria-label="Roof Type">
+                    <button
+                      type="button"
+                      class="toggle-btn"
+                      :class="{ 'is-active': roofInput === 'flat' }"
+                      :aria-checked="roofInput === 'flat'"
+                      role="radio"
+                      @click="roofInput = 'flat'"
+                    >
+                      Flat
+                    </button>
+                    <button
+                      type="button"
+                      class="toggle-btn"
+                      :class="{ 'is-active': roofInput === 'flat-chairs' }"
+                      :aria-checked="roofInput === 'flat-chairs'"
+                      role="radio"
+                      @click="roofInput = 'flat-chairs'"
+                    >
+                      Lawn Chairs
+                    </button>
+                    <button
+                      type="button"
+                      class="toggle-btn"
+                      :class="{ 'is-active': roofInput === 'pitched' }"
+                      :aria-checked="roofInput === 'pitched'"
+                      role="radio"
+                      @click="roofInput = 'pitched'"
+                    >
+                      Pitched
+                    </button>
+                    <button
+                      type="button"
+                      class="toggle-btn"
+                      :class="{ 'is-active': roofInput === 'mansard' }"
+                      :aria-checked="roofInput === 'mansard'"
+                      role="radio"
+                      @click="roofInput = 'mansard'"
+                    >
+                      Mansard
+                    </button>
+                  </div>
+                </div>
+
+                <div class="display-settings-row">
+                  <div class="display-field">
+                    <label class="field-label">Balconies</label>
+                    <div class="toggle-group" role="radiogroup" aria-label="Balconies">
+                      <button
+                        type="button"
+                        class="toggle-btn"
+                        :class="{ 'is-active': !hasBalconyInput }"
+                        :aria-checked="!hasBalconyInput"
+                        role="radio"
+                        @click="hasBalconyInput = false"
+                      >
+                        None
+                      </button>
+                      <button
+                        type="button"
+                        class="toggle-btn"
+                        :class="{ 'is-active': hasBalconyInput }"
+                        :aria-checked="hasBalconyInput"
+                        role="radio"
+                        @click="hasBalconyInput = true"
+                      >
+                        Balconies
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="display-field">
+                    <label class="field-label">Front Lawn</label>
+                    <div class="toggle-group" role="radiogroup" aria-label="Front Lawn">
+                      <button
+                        type="button"
+                        class="toggle-btn"
+                        :class="{ 'is-active': !hasGrassInput }"
+                        :aria-checked="!hasGrassInput"
+                        role="radio"
+                        @click="hasGrassInput = false"
+                      >
+                        None
+                      </button>
+                      <button
+                        type="button"
+                        class="toggle-btn"
+                        :class="{ 'is-active': hasGrassInput }"
+                        :aria-checked="hasGrassInput"
+                        role="radio"
+                        @click="hasGrassInput = true"
+                      >
+                        Grass
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -786,6 +984,75 @@ useEventListener(window, "keydown", handleModalKeydown);
   font-weight: bold;
 }
 
+/* Display settings row (Balconies & Front Lawn) */
+.display-settings-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 400px) {
+  .display-settings-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+
+.display-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.toggle-group {
+  display: flex;
+  align-items: center;
+  background: #fbf8f2;
+  border: 1.5px solid #a89c8a;
+  border-radius: 6px;
+  padding: 2.5px;
+  gap: 2px;
+  box-sizing: border-box;
+}
+
+.toggle-btn {
+  flex: 1;
+  padding: 6px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #57534e;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+  user-select: none;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.toggle-btn:hover:not(.is-active) {
+  background: #f5eedf;
+  color: #1c1917;
+}
+
+.toggle-btn.is-active {
+  background: #ffffff;
+  color: #1c1917;
+  font-weight: 700;
+  border-color: #c4b9a9;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.toggle-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
 .modal-footer {
   display: flex;
   align-items: center;

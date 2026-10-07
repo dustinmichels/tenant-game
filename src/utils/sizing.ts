@@ -6,14 +6,12 @@ import { getBuildingGridDimensions, getSpatialPersonWidth, PERSON_ASPECT_RATIO }
  */
 export const BASELINE_PERSON_WIDTH = 75;
 
-const BASELINE_PLAYER_COUNT = 32;
 const MIN_PERSON_WIDTH = 26;
+const MAX_PERSON_WIDTH = 80;
 
 /**
- * Computes a person size that follows three constraints:
- * 1. the selected building grid must fit on the canvas with gutters;
- * 2. size falls smoothly with the square root of the total player count; and
- * 3. sparse games keep the baseline size so their extra space remains between buildings.
+ * Computes the largest comfortable person size that fits the selected building
+ * grid. The upper bound keeps very sparse games from producing oversized cards.
  */
 export function calculateOptimalPersonSize(
   buildingCount: number,
@@ -27,10 +25,10 @@ export function calculateOptimalPersonSize(
   const height = Math.max(1, canvasHeight);
   const grid = getBuildingGridDimensions(buildings, people, width, height);
   const spatialLimit = getSpatialPersonWidth(people, grid, width, height);
-  const densityTarget =
-    BASELINE_PERSON_WIDTH * Math.min(1, Math.sqrt(BASELINE_PLAYER_COUNT / (buildings * people)));
-  const rawWidth = Math.min(densityTarget, spatialLimit);
-  const personWidth = Math.max(MIN_PERSON_WIDTH, Math.round(rawWidth));
+  const personWidth = Math.max(
+    MIN_PERSON_WIDTH,
+    Math.min(MAX_PERSON_WIDTH, Math.round(spatialLimit)),
+  );
   const personHeight = Math.round(personWidth / PERSON_ASPECT_RATIO);
   const personScale = Math.round((personWidth / BASELINE_PERSON_WIDTH) * 100) / 100;
 

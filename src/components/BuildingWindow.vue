@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { roughGen } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
+import { generateBalconyPaths } from "../utils/buildingArchitecture";
 import TenantSilhouette from "./TenantSilhouette.vue";
 
 const props = withDefaults(
@@ -14,6 +15,7 @@ const props = withDefaults(
     inUnion?: boolean;
     isEvicted?: boolean;
     hasBegun?: boolean;
+    hasBalcony?: boolean;
   }>(),
   {
     variant: 0,
@@ -24,9 +26,9 @@ const props = withDefaults(
     inUnion: false,
     isEvicted: false,
     hasBegun: true,
+    hasBalcony: false,
   },
 );
-
 const emit = defineEmits<{
   (e: "select", event: MouseEvent): void;
 }>();
@@ -54,6 +56,11 @@ const windowPaths = computed<PathInfo[]>(() => {
   });
 
   return [frame, sill].flatMap((d) => roughGen.toPaths(d));
+});
+
+const balconyPaths = computed<PathInfo[]>(() => {
+  if (!props.hasBalcony) return [];
+  return generateBalconyPaths(windowSeed.value + 40, "#5c4f3d", props.inUnion && props.hasBegun);
 });
 
 const tooltip = computed(() => {
@@ -115,6 +122,18 @@ function handleClick(e: MouseEvent) {
         :is-evicted="hasBegun && isEvicted"
       />
     </div>
+
+    <!-- Optional Decorative Window Balcony -->
+    <svg v-if="hasBalcony" viewBox="0 0 36 53" class="window-balcony-svg" aria-hidden="true">
+      <path
+        v-for="(p, idx) in balconyPaths"
+        :key="idx"
+        :d="p.d"
+        :stroke="p.stroke"
+        :stroke-width="p.strokeWidth"
+        :fill="p.fill || 'none'"
+      />
+    </svg>
   </div>
 </template>
 
@@ -139,6 +158,16 @@ function handleClick(e: MouseEvent) {
   height: 100%;
   pointer-events: none;
   overflow: visible;
+}
+
+.window-balcony-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 3;
 }
 
 .window-pane-interior {

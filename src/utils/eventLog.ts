@@ -24,26 +24,87 @@ export function isEarnEvent(event: GameEvent | { text: string; type?: string }):
 
 export function formatSpendEventText(amount: number): string {
   if (amount >= 1_000_000 && amount % 1_000_000 === 0) {
-    return `Landlord spends ${amount / 1_000_000}m`;
+    return `💸 Landlord spends ${amount / 1_000_000}m`;
   }
   if (amount >= 1_000 && amount % 1_000 === 0) {
-    return `Landlord spends ${amount / 1_000}k`;
+    return `💸 Landlord spends ${amount / 1_000}k`;
   }
-  return `Landlord spends $${amount.toLocaleString()}`;
+  return `💸 Landlord spends $${amount.toLocaleString()}`;
 }
 
 export function formatEarnEventText(amount: number): string {
   if (amount >= 1_000_000 && amount % 1_000_000 === 0) {
-    return `Landlord earns ${amount / 1_000_000}m`;
+    return `💰 Landlord earns ${amount / 1_000_000}m`;
   }
   if (amount >= 1_000 && amount % 1_000 === 0) {
-    return `Landlord earns ${amount / 1_000}k`;
+    return `💰 Landlord earns ${amount / 1_000}k`;
   }
-  return `Landlord earns $${amount.toLocaleString()}`;
+  return `💰 Landlord earns $${amount.toLocaleString()}`;
 }
 
 export function formatDiceRollEventText(total: number): string {
   return `🎲 Group rolled ${total}`;
+}
+
+export function formatJoinUnionEventText(buildingLabel: string): string {
+  return `✊ Resident in ${buildingLabel} joined tenant union`;
+}
+
+export function formatLeaveUnionEventText(buildingLabel: string): string {
+  return `👋 Resident in ${buildingLabel} left tenant union`;
+}
+
+export function formatEvictEventText(buildingLabel: string): string {
+  return `🚪 Resident in ${buildingLabel} evicted`;
+}
+
+export function formatUnevictEventText(buildingLabel: string): string {
+  return `↩️ Resident in ${buildingLabel} unevicted`;
+}
+
+export function formatCoalitionEventText(sourceLabel: string, targetLabel: string): string {
+  return `🔗 Coalition formed: ${sourceLabel} + ${targetLabel}`;
+}
+
+export function formatBreakCoalitionEventText(sourceLabel: string, targetLabel: string): string {
+  return `✂️ Coalition dissolved: ${sourceLabel} + ${targetLabel}`;
+}
+
+export function hasEventEmoji(text: string): boolean {
+  if (!text) return false;
+  return /^\p{Extended_Pictographic}/u.test(text.trim());
+}
+
+export function getStandardEventEmoji(
+  text: string,
+  type?: string,
+  actionType?: string,
+): string | null {
+  if (actionType === "spend" || type === "spend" || isSpendEventText(text)) return "💸";
+  if (actionType === "earn" || type === "earn" || isEarnEventText(text)) return "💰";
+  if (actionType === "joinUnion" || /joined (?:the )?(?:tenant )?union/i.test(text)) return "✊";
+  if (actionType === "leaveUnion" || /left (?:the )?(?:tenant )?union/i.test(text)) return "👋";
+  if (actionType === "evict" || /\bevicted\b/i.test(text)) return "🚪";
+  if (actionType === "unevict" || /\b(?:unevicted|eviction cancelled)\b/i.test(text)) return "↩️";
+  if (actionType === "connectCoalition" || /\bcoalition formed\b/i.test(text)) return "🔗";
+  if (/\bcoalition (?:dissolved|broken|disconnected)\b/i.test(text)) return "✂️";
+  if (/\b(?:group )?rolled \d+/i.test(text)) return "🎲";
+  return null;
+}
+
+export function ensureEventEmoji(text: string, type?: string, actionType?: string): string {
+  if (!text || typeof text !== "string") return "";
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  if (hasEventEmoji(trimmed)) return trimmed;
+  const emoji = getStandardEventEmoji(trimmed, type, actionType);
+  if (emoji) {
+    const normalizedText = /^landlord\b/i.test(trimmed)
+      ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+      : trimmed;
+    return `${emoji} ${normalizedText}`;
+  }
+  return trimmed;
 }
 
 export interface EventTextSegment {

@@ -11,6 +11,7 @@ import {
 import { Undo2, X, CornerDownLeft } from "lucide-vue-next";
 import { useEventListener } from "@vueuse/core";
 import type { GameEvent } from "../types/game";
+import { ensureEventEmoji } from "../utils/eventLog";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
 
@@ -26,11 +27,15 @@ const emit = defineEmits<{
 
 const promptActionText = computed(() => {
   if (!props.event) return "this action";
-  const text = props.event.text.trim();
-  if (/action$/i.test(text)) {
-    return `"${text}"`;
+  const rawText = ensureEventEmoji(
+    props.event.text,
+    props.event.type,
+    props.event.action?.type,
+  ).trim();
+  if (/action$/i.test(rawText)) {
+    return `"${rawText}"`;
   }
-  return `"${text}" action`;
+  return `"${rawText}" action`;
 });
 
 function handleConfirm() {

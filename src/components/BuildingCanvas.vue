@@ -7,6 +7,7 @@ import type {
   CoalitionConnection,
   CoalitionGroup,
   BuildingDimensions,
+  BuildingRoofType,
 } from "../types/game";
 import {
   clampBuildingPosition,
@@ -58,7 +59,7 @@ const isEditingBuildings = computed<boolean>({
     }
   },
 });
-const showLandlord = defineModel<boolean>("showLandlord", { default: true });
+const showLandlord = defineModel<boolean>("showLandlord", { default: false });
 const actionsCollapsed = defineModel<boolean>("actionsCollapsed", { default: false });
 
 const props = withDefaults(
@@ -114,7 +115,16 @@ const emit = defineEmits<{
   (e: "update-building-position", buildingId: string, x: number, y: number): void;
   (e: "update-building-positions", updates: Array<{ id: string; x: number; y: number }>): void;
   (e: "update-landlord-position", x: number, y: number): void;
-  (e: "adjust-tenants", buildingId: string, count: number, label?: string, color?: string): void;
+  (
+    e: "adjust-tenants",
+    buildingId: string,
+    count: number,
+    label?: string,
+    color?: string,
+    roofType?: BuildingRoofType,
+    hasBalcony?: boolean,
+    hasGrass?: boolean,
+  ): void;
   (e: "toggle-union", buildingId: string, tenantId: string, join?: boolean): void;
   (e: "toggle-eviction", buildingId: string, tenantId: string, evicted?: boolean): void;
   (e: "connect-coalition", sourceId: string, targetId: string): void;
@@ -489,7 +499,16 @@ function closeAdjustModal() {
 
 function handleSaveAdjustTenants(
   buildingId: string,
-  settingsOrCount: { count: number; label: string; color: string } | number,
+  settingsOrCount:
+    | {
+        count: number;
+        label: string;
+        color: string;
+        roofType?: BuildingRoofType;
+        hasBalcony?: boolean;
+        hasGrass?: boolean;
+      }
+    | number,
 ) {
   if (typeof settingsOrCount === "object" && settingsOrCount !== null) {
     emit(
@@ -498,6 +517,9 @@ function handleSaveAdjustTenants(
       settingsOrCount.count,
       settingsOrCount.label,
       settingsOrCount.color,
+      settingsOrCount.roofType,
+      settingsOrCount.hasBalcony,
+      settingsOrCount.hasGrass,
     );
   } else {
     emit("adjust-tenants", buildingId, settingsOrCount);
@@ -1263,9 +1285,9 @@ function getBuildingCoalitionNames(buildingId: string): string {
                 :class="{ 'is-active': showLandlord }"
               >
                 <input
+                  v-model="showLandlord"
                   type="checkbox"
                   role="switch"
-                  v-model="showLandlord"
                   :aria-checked="showLandlord"
                   class="toggle-input sr-only"
                 />

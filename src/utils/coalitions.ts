@@ -224,8 +224,14 @@ export function computeCoalitionGroups(
     const firstBuilding = componentBuildings[0];
     if (!firstBuilding) continue;
 
+    // Existing colors of all buildings and already formed coalitions
+    const existingColors = [
+      ...buildings.map((b) => b.color),
+      ...groups.map((g) => g.dominantColor),
+    ];
+
     // Compute combined coalition color using color theory (2 merge -> new color, 3rd merges again)
-    const coalitionColor = computeCoalitionColor(componentBuildings, connections);
+    const coalitionColor = computeCoalitionColor(componentBuildings, connections, existingColors);
 
     // Sum active union members across all buildings in this coalition component
     const buildingActiveCounts: Record<string, number> = {};
