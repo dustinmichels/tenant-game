@@ -1,19 +1,15 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Building, Tenant, CoalitionGroup } from "../types/game";
-import {
-  isBuildingOrganized,
-  getBuildingUnionCount,
-  getTenantGridCols,
-  BASELINE_PERSON_WIDTH,
-  PERSON_ASPECT_RATIO,
-} from "../types/game";
+import { isBuildingOrganized, getBuildingUnionCount } from "../utils/coalitions";
+import { getTenantGridCols, PERSON_ASPECT_RATIO } from "../utils/layout";
+import { BASELINE_PERSON_WIDTH } from "../utils/sizing";
 import { roughGen, createSeed } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
-import { getContrastTextColor } from "../utils/coalitionColors";
+import { getContrastTextColor } from "../utils/colorTheory";
 import RoughBox from "./RoughBox.vue";
 import BuildingWindow from "./BuildingWindow.vue";
-import { Settings, Cable, GripVertical } from "lucide-vue-next";
+import { Pencil, Cable, GripVertical } from "lucide-vue-next";
 
 const props = withDefaults(
   defineProps<{
@@ -28,6 +24,7 @@ const props = withDefaults(
     unionCount?: number;
     coalitions?: CoalitionGroup[];
     canMove?: boolean;
+    editBuildings?: boolean;
   }>(),
   {
     effectiveColor: undefined,
@@ -40,22 +37,14 @@ const props = withDefaults(
     unionCount: undefined,
     coalitions: () => [],
     canMove: true,
+    editBuildings: undefined,
   },
 );
 const emit = defineEmits<{
   (e: "tenant-select", payload: { event: MouseEvent; tenant: Tenant; building: Building }): void;
-  (
-    e: "tenant-context-menu",
-    payload: { event: MouseEvent; tenant: Tenant; building: Building },
-  ): void;
   (e: "adjust-tenants", building: Building): void;
   (e: "pointerdown-drag", event: PointerEvent, building: Building): void;
-  (e: "drag-start", event: DragEvent, building: Building): void;
-  (e: "drag-over", event: DragEvent, building: Building): void;
-  (e: "drop", event: DragEvent, building: Building): void;
-  (e: "drag-end", event: DragEvent): void;
   (e: "start-thread", building: Building, event: PointerEvent): void;
-  (e: "disconnect-building", buildingId: string): void;
 }>();
 const buildingSeed = computed(() =>
   createSeed(`building_${props.building.id}_${props.building.index}`),
@@ -90,8 +79,12 @@ function handleTenantClick(e: MouseEvent, tenant: Tenant) {
   emit("tenant-select", { event: e, tenant, building: props.building });
 }
 
+const isEditable = computed(() =>
+  props.editBuildings !== undefined ? props.editBuildings : props.canMove,
+);
+
 function handleDragPointerDown(e: PointerEvent) {
-  if (!props.canMove) return;
+  if (!isEditable.value) return;
   if (e.button !== 0) return;
   emit("pointerdown-drag", e, props.building);
 }
@@ -112,7 +105,7 @@ const cardWidth = computed(() => {
   const gap = 3;
   // Width of windows grid + padding around windows (5px on each side = 10px) + rough box border/padding (10px)
   const contentWidth = cols * pw + (cols - 1) * gap + 20;
-  // Header plaque needs at least 144px to fit label, badges, gear comfortably without truncation
+  // Header plaque needs at least 144px to fit label, badges, pencil comfortably without truncation
   return Math.max(contentWidth, 144);
 });
 
@@ -156,18 +149,20 @@ const roofPaths = computed<PathInfo[]>(() => {
       '--building-cols': gridColumns,
     }"
   >
-    <!-- Building settings button in top left corner -->
-    <button
-      type="button"
-      class="building-settings-btn"
-      title="Building settings (name, color, tenants)"
-      :aria-label="`Settings for ${building.label}`"
-      @pointerdown.stop
-      @click.stop="emit('adjust-tenants', building)"
-    >
-      <Settings :size="15" :stroke-width="1.5" class="settings-gear-icon" aria-hidden="true" />
-    </button>
-
+    <!-- Building edit button in top left corner (only in edit mode) -->
+    <transition name="edit-control-pop">
+      <button
+        v-if="isEditable"
+        type="button"
+        class="building-settings-btn"
+        title="Edit building (name, color, tenants)"
+        :aria-label="`Edit settings for ${building.label}`"
+        @pointerdown.stop
+        @click.stop="emit('adjust-tenants', building)"
+      >
+        <Pencil :size="13" :stroke-width="1.8" class="settings-pencil-icon" aria-hidden="true" />
+      </button>
+    </transition>
     <!-- Coalition connector circle button/pin -->
     <button
       type="button"
@@ -192,18 +187,20 @@ const roofPaths = computed<PathInfo[]>(() => {
       <Cable :size="14" :stroke-width="1.5" class="spool-icon" aria-hidden="true" />
     </button>
 
-    <!-- Building drag indicator handle -->
-    <button
-      v-if="canMove"
-      type="button"
-      class="building-drag-handle"
-      title="Drag to move building"
-      aria-label="Drag to move building"
-      @pointerdown.stop.prevent="handleDragPointerDown"
-    >
-      <GripVertical :size="14" :stroke-width="1.5" class="drag-icon" aria-hidden="true" />
-      <span class="drag-label">Move</span>
-    </button>
+    <!-- Building drag indicator handle (only in edit mode) -->
+    <transition name="edit-control-pop">
+      <button
+        v-if="isEditable"
+        type="button"
+        class="building-drag-handle"
+        title="Drag to move building"
+        aria-label="Drag to move building"
+        @pointerdown.stop.prevent="handleDragPointerDown"
+      >
+        <GripVertical :size="14" :stroke-width="1.5" class="drag-icon" aria-hidden="true" />
+        <span class="drag-label">Move</span>
+      </button>
+    </transition>
     <RoughBox
       :stroke="activeColor"
       :fill="'#f5efe4'"
@@ -218,8 +215,8 @@ const roofPaths = computed<PathInfo[]>(() => {
         <!-- Streamlined Rooftop architectural trim (draggable) -->
         <div
           class="building-roof-area"
-          :class="{ 'is-draggable': canMove }"
-          :title="canMove ? 'Drag to move building' : undefined"
+          :class="{ 'is-draggable': isEditable }"
+          :title="isEditable ? 'Drag to move building' : undefined"
           @pointerdown="handleDragPointerDown"
         >
           <svg
@@ -239,58 +236,38 @@ const roofPaths = computed<PathInfo[]>(() => {
           </svg>
         </div>
 
-        <!-- Header plaque with hand-drawn label, color dot, badge, and gear icon -->
-        <div class="building-header-plaque">
-          <RoughBox
-            :stroke="'#524534'"
-            :fill="'#ebe2d3'"
-            fill-style="solid"
-            :roughness="0.7"
-            :stroke-width="1.0"
-            :seed="buildingSeed + 8"
-            class="plaque-box"
+        <!-- Header status strip: color dot, union ratio, organized indicator -->
+        <div class="building-header-status">
+          <div
+            class="status-stat-group"
+            :title="`${effectiveUnionCount} of ${building.tenants.length} resident${building.tenants.length === 1 ? '' : 's'} in union${isOrganized ? ' (Organized)' : ''}`"
           >
-            <div class="plaque-content">
-              <div
-                class="plaque-people"
-                :title="`${building.tenants.length} total resident${building.tenants.length === 1 ? '' : 's'}`"
-              >
-                <span
-                  class="building-color-dot"
-                  :style="{ backgroundColor: activeColor }"
-                  :title="
-                    isInCoalition
-                      ? `Coalition Color: ${activeColor}`
-                      : `Instigator Color: ${activeColor}`
-                  "
-                />
-                <span class="plaque-count-text">
-                  <span class="badge-num">{{ building.tenants.length }}</span>
-                  <span class="badge-txt">{{
-                    building.tenants.length === 1 ? "person" : "people"
-                  }}</span>
-                </span>
-              </div>
+            <span
+              class="building-color-dot"
+              :style="{ backgroundColor: activeColor }"
+              :title="
+                isInCoalition
+                  ? `Coalition Color: ${activeColor}`
+                  : `Instigator Color: ${activeColor}`
+              "
+            />
+            <span class="status-ratio-text">
+              <strong class="ratio-num" :class="{ 'has-union': effectiveUnionCount > 0 }">{{
+                effectiveUnionCount
+              }}</strong>
+              <span class="ratio-slash">/</span>
+              <span class="ratio-total">{{ building.tenants.length }}</span>
+              <span class="ratio-label">in union</span>
+            </span>
+          </div>
 
-              <div class="plaque-union">
-                <span
-                  v-if="isOrganized"
-                  class="organized-flag-badge"
-                  title="Building is organized (majority in union)"
-                >
-                  ✊ Org
-                </span>
-                <div
-                  class="building-union-badge"
-                  :class="{ 'has-union': effectiveUnionCount > 0 }"
-                  :title="`${effectiveUnionCount} unionized resident${effectiveUnionCount === 1 ? '' : 's'}`"
-                >
-                  <span class="badge-num">{{ effectiveUnionCount }}</span>
-                  <span class="badge-txt">unionized</span>
-                </div>
-              </div>
-            </div>
-          </RoughBox>
+          <span
+            v-if="isOrganized"
+            class="status-organized-flag"
+            title="Building is organized (majority in union)"
+          >
+            ✊ Org
+          </span>
         </div>
 
         <!-- Inside the building: apartments grid -->
@@ -318,12 +295,12 @@ const roofPaths = computed<PathInfo[]>(() => {
         <!-- Bottom colored bar with building number/name -->
         <div
           class="building-bottom-bar"
-          :class="{ 'is-draggable': canMove }"
+          :class="{ 'is-draggable': isEditable }"
           :style="{
             backgroundColor: activeColor,
             color: barTextColor,
           }"
-          :title="canMove ? `${building.label} (Drag to move)` : building.label"
+          :title="isEditable ? `${building.label} (Drag to move)` : building.label"
           :aria-label="building.label"
           @pointerdown="handleDragPointerDown"
         >
@@ -566,105 +543,83 @@ const roofPaths = computed<PathInfo[]>(() => {
   display: block;
 }
 
-/* Plaque */
-.building-header-plaque {
-  padding: 1px 4px 2px;
-  width: 100%;
-}
-
-.plaque-box {
-  width: 100%;
-}
-
-.plaque-content {
+/* Header status strip */
+.building-header-status {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1px 4px;
+  padding: 3px 6px 2px;
   width: 100%;
-  gap: 3px;
-}
-
-.plaque-people {
-  display: inline-flex;
-  align-items: center;
   gap: 4px;
   min-width: 0;
-  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.status-stat-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .building-color-dot {
-  width: 8px;
-  height: 8px;
+  width: 7.5px;
+  height: 7.5px;
   border-radius: 50%;
   border: 1.2px solid #29241e;
   flex-shrink: 0;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
-.plaque-count-text {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 2px;
-  color: #29241e;
+.status-ratio-text {
   font-size: 0.68rem;
   font-weight: 600;
-  line-height: 1.2;
+  color: #443a2f;
   white-space: nowrap;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
 }
 
-.plaque-union {
+.ratio-num {
+  font-weight: 800;
+  font-size: 0.74rem;
+  color: #574c3d;
+}
+
+.ratio-num.has-union {
+  color: #15803d;
+}
+
+.ratio-slash {
+  opacity: 0.45;
+  margin: 0 1px;
+}
+
+.ratio-total {
+  font-weight: 700;
+  color: #574c3d;
+}
+
+.ratio-label {
+  font-size: 0.64rem;
+  color: #6b5d4d;
+  margin-left: 3px;
+  font-weight: 600;
+}
+
+.status-organized-flag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #15803d;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
+  line-height: 1.2;
+  white-space: nowrap;
   flex-shrink: 0;
 }
 
-.organized-flag-badge {
-  font-size: 0.64rem;
-  font-weight: 700;
-  color: #15803d;
-  background-color: #dcfce7;
-  border: 1px solid #86efac;
-  padding: 0 3px;
-  border-radius: 3px;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.building-union-badge {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 2px;
-  background: #dbcfbc;
-  padding: 0 4px;
-  border-radius: 3px;
-  font-size: 0.66rem;
-  color: #574c3d;
-  font-weight: 600;
-  line-height: 1.2;
-  white-space: nowrap;
-  transition:
-    background-color 0.18s ease,
-    color 0.18s ease,
-    border-color 0.18s ease;
-}
-
-.building-union-badge.has-union {
-  background-color: #dcfce7;
-  color: #15803d;
-  border: 1px solid #86efac;
-  padding: 0 3px;
-}
-
-.badge-num {
-  font-weight: 800;
-  font-size: 0.72rem;
-}
-
-.badge-txt {
-  font-size: 0.64rem;
-}
 .building-settings-btn {
   position: absolute;
   top: -10px;
@@ -703,10 +658,12 @@ const roofPaths = computed<PathInfo[]>(() => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
 }
 
+.building-settings-btn:hover .settings-pencil-icon,
 .building-settings-btn:hover .settings-gear-icon {
-  transform: rotate(45deg);
+  transform: rotate(-15deg) scale(1.08);
 }
 
+.settings-pencil-icon,
 .settings-gear-icon {
   display: inline-block;
   line-height: 1;
@@ -735,5 +692,25 @@ const roofPaths = computed<PathInfo[]>(() => {
   height: var(--person-height, 110px);
   aspect-ratio: 0.68;
   flex-shrink: 0;
+}
+
+/* Edit mode controls pop animation */
+.edit-control-pop-enter-active,
+.edit-control-pop-leave-active {
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.building-settings-btn.edit-control-pop-enter-from,
+.building-settings-btn.edit-control-pop-leave-to {
+  opacity: 0;
+  transform: scale(0.4);
+}
+
+.building-drag-handle.edit-control-pop-enter-from,
+.building-drag-handle.edit-control-pop-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.4);
 }
 </style>

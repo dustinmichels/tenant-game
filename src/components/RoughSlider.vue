@@ -4,9 +4,10 @@ import { useResizeObserver } from "@vueuse/core";
 import { roughGen } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
 
+const modelValue = defineModel<number | null>({ required: true });
+
 const props = withDefaults(
   defineProps<{
-    modelValue: number | null;
     min?: number;
     max?: number;
     step?: number;
@@ -25,10 +26,6 @@ const props = withDefaults(
     seed: 500,
   },
 );
-
-const emit = defineEmits<{
-  (e: "update:modelValue", value: number): void;
-}>();
 
 const trackViewportRef = useTemplateRef<HTMLElement>("trackViewportRef");
 const trackWidth = shallowRef(240);
@@ -61,7 +58,7 @@ const usableWidth = computed(() => Math.max(20, trackWidth.value - 2 * PAD.value
 
 // Clamped integer value for slider thumb position (between min and max)
 const clampedVal = computed(() => {
-  const num = Number(props.modelValue);
+  const num = Number(modelValue.value);
   if (!num || isNaN(num) || num < props.min) return props.min;
   return Math.min(props.max, num);
 });
@@ -180,7 +177,7 @@ const thumbPaths = computed<PathInfo[]>(() => {
 
 function handleNativeInput(e: Event) {
   const target = e.target as HTMLInputElement;
-  emit("update:modelValue", Number(target.value));
+  modelValue.value = Number(target.value);
 }
 
 function isPipActive(n: number): boolean {
@@ -210,7 +207,7 @@ function getPipPaths(n: number): PathInfo[] {
 }
 
 function handlePipClick(n: number) {
-  emit("update:modelValue", n);
+  modelValue.value = n;
 }
 </script>
 

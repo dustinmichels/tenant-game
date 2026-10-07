@@ -20,68 +20,17 @@ export interface CityscapeLayerConfig {
   opacityLight: number;
   /** Baseline opacity in dark mode */
   opacityDark: number;
-  /** Optional mouse parallax movement scale factor (higher = moves more with cursor) */
-  mouseFactorX?: number;
-  mouseFactorY?: number;
   /** Vertical placement percentage from bottom (0 = grounded at bottom) */
   bottomOffsetPercent?: number;
   /** Z-index relative to other layers */
   zIndex: number;
 }
 
-export interface ParallaxCityscapeProps {
-  /** Overall speed multiplier for the drifting animation (1 = normal, 0.5 = slow, 2 = fast) */
-  speed?: number;
-  /** Pauses the horizontal scrolling animation */
-  paused?: boolean;
-  /** Direction the buildings drift towards ("left" | "right") */
-  direction?: "left" | "right";
-  /** Multiplier applied to layer blur amounts (1 = standard, 0 = crisp/no blur) */
-  blurMultiplier?: number;
-  /** Multiplier applied to layer opacity (1 = standard, 0.5 = extra faint) */
-  opacityMultiplier?: number;
-  /** Whether mouse movement causes subtle 3D parallax shifts */
-  interactive?: boolean;
-  /** Custom layer configurations if overriding default cityscape */
-  layers?: CityscapeLayerConfig[];
-  /** Shows a soft bottom mist/gradient overlay to ground the buildings */
-  showGroundMist?: boolean;
-  /** Anchors the container to the viewport with position: fixed instead of absolute */
-  fixed?: boolean;
-}
-
-/**
- * Calculates damped mouse parallax offset values based on normalized cursor coordinates (-1 to 1).
- */
-export function calculateMouseParallaxOffset(
-  normalizedX: number,
-  normalizedY: number,
-  factorX: number,
-  factorY: number,
-  maxOffsetPx = 30,
-): { x: number; y: number } {
-  const clampedX = Math.max(-1, Math.min(1, normalizedX));
-  const clampedY = Math.max(-1, Math.min(1, normalizedY));
-
-  const rawX = -clampedX * factorX * maxOffsetPx;
-  const rawY = -clampedY * factorY * (maxOffsetPx * 0.5);
-
-  const roundVal = (v: number) => {
-    const rounded = Math.round(v * 100) / 100;
-    return rounded === 0 ? 0 : rounded;
-  };
-
-  return {
-    x: roundVal(rawX),
-    y: roundVal(rawY),
-  };
-}
-
 /**
  * Layer 1: Distant skyline of skyscrapers, high-rise towers, spires, and communications antennas.
  * Tile width: 1600, height: 320.
  */
-export const FAR_SKYLINE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 320" width="1600" height="320" preserveAspectRatio="none" fill="currentColor">
+const FAR_SKYLINE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 320" width="1600" height="320" preserveAspectRatio="none" fill="currentColor">
   <!-- Building 1: Slender spire tower -->
   <rect x="24" y="60" width="80" height="260" rx="1" />
   <rect x="58" y="24" width="12" height="36" />
@@ -188,7 +137,7 @@ export const FAR_SKYLINE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox=
  * fire escapes, cornices, and glowing windows.
  * Tile width: 1600, height: 360.
  */
-export const MID_CITYSCAPE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 360" width="1600" height="360" preserveAspectRatio="none" fill="currentColor">
+const MID_CITYSCAPE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 360" width="1600" height="360" preserveAspectRatio="none" fill="currentColor">
   <!-- Building 1: 5-story brick tenement with water tower & fire escape (x: 20 to 160) -->
   <g class="city-bldg-mid">
     <rect x="24" y="85" width="138" height="275" />
@@ -412,7 +361,7 @@ export const MID_CITYSCAPE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBo
  * entrance porticoes, detailed fire escapes, and rich window frames.
  * Tile width: 1600, height: 400.
  */
-export const NEAR_STREETSCAPE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 400" width="1600" height="400" preserveAspectRatio="none" fill="currentColor">
+const NEAR_STREETSCAPE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 400" width="1600" height="400" preserveAspectRatio="none" fill="currentColor">
   <!-- Building 1: Closer 4-story apartment with fire escape & entryway (x: 30 to 206) -->
   <g class="city-bldg-near">
     <rect x="30" y="70" width="176" height="330" />
@@ -607,8 +556,6 @@ export const DEFAULT_CITYSCAPE_LAYERS: readonly CityscapeLayerConfig[] = [
     blurRadius: 4.5,
     opacityLight: 0.32,
     opacityDark: 0.28,
-    mouseFactorX: 0.2,
-    mouseFactorY: 0.15,
     bottomOffsetPercent: 2,
     zIndex: 1,
   },
@@ -622,8 +569,6 @@ export const DEFAULT_CITYSCAPE_LAYERS: readonly CityscapeLayerConfig[] = [
     blurRadius: 2.2,
     opacityLight: 0.48,
     opacityDark: 0.42,
-    mouseFactorX: 0.5,
-    mouseFactorY: 0.35,
     bottomOffsetPercent: 0,
     zIndex: 2,
   },
@@ -637,9 +582,7 @@ export const DEFAULT_CITYSCAPE_LAYERS: readonly CityscapeLayerConfig[] = [
     blurRadius: 1.0,
     opacityLight: 0.62,
     opacityDark: 0.55,
-    mouseFactorX: 0.9,
-    mouseFactorY: 0.6,
     bottomOffsetPercent: 0,
     zIndex: 3,
   },
-] as const;
+];

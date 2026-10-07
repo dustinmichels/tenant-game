@@ -10,7 +10,6 @@ import {
   colorToOklch,
   colorDistance,
   getContrastTextColor,
-  PRIMARY_POLES,
 } from "../colorTheory";
 
 describe("colorTheory primary color generation", () => {
@@ -200,6 +199,32 @@ describe("colorTheory color combination logic", () => {
     const blended3 = mergeColors([primaryRed, primaryYellow, primaryBlue]);
     expect(typeof blended3).toBe("string");
     expect(blended3.startsWith("#")).toBe(true);
+  });
+
+  it("merges 3+ colors in an order-independent, commutative manner", () => {
+    const p1 = mergeColors([primaryRed, primaryYellow, primaryBlue]);
+    const p2 = mergeColors([primaryYellow, primaryBlue, primaryRed]);
+    const p3 = mergeColors([primaryBlue, primaryRed, primaryYellow]);
+
+    expect(p1).toBe(p2);
+    expect(p2).toBe(p3);
+  });
+
+  it("combines Amber (warm yellow) + Cobalt (royal blue) to form Green, not Magenta", () => {
+    const amber = "#e6a100"; // hue ~61°
+    const cobalt = "#1d5fe2"; // hue ~262°
+
+    const green = combineTwoColors(amber, cobalt);
+    const { h } = colorToOklch(green);
+    // Must be in the Green hue range (~130..190°), NOT Magenta (~330..360°)
+    expect(h).toBeGreaterThanOrEqual(130);
+    expect(h).toBeLessThanOrEqual(190);
+  });
+
+  it("safely handles invalid color inputs without throwing", () => {
+    expect(combineTwoColors("not-a-color", primaryRed)).toBe(primaryRed);
+    expect(combineTwoColors("invalid1", "invalid2")).toBe("#7c3aed");
+    expect(mergeColors([])).toBe("#7c3aed");
   });
 
   it("computes coalition colors for connected buildings", () => {

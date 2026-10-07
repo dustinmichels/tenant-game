@@ -1,12 +1,12 @@
 import type { BuildingDimensions, BuildingPositionUpdate } from "../types/game";
 import { BUILDING_GAP_PX, getBuildingGridDimensions, getBuildingGridMetrics } from "./layout";
 
-export const DEFAULT_BUILDING_DIMENSIONS: BuildingDimensions = {
+const DEFAULT_BUILDING_DIMENSIONS: BuildingDimensions = {
   w: 26,
   h: 32,
 };
 
-export const CANVAS_BOUNDS = {
+const CANVAS_BOUNDS = {
   minX: 2,
   maxX: 84,
   minY: 2,
@@ -15,7 +15,7 @@ export const CANVAS_BOUNDS = {
   landlordMaxY: 0,
 };
 
-export function checkBuildingOverlap(
+function checkBuildingOverlap(
   posA: { x: number; y: number },
   posB: { x: number; y: number },
   dimA: BuildingDimensions = DEFAULT_BUILDING_DIMENSIONS,
@@ -27,7 +27,7 @@ export function checkBuildingOverlap(
   return overlapX && overlapY;
 }
 
-export function calculateBuildingOverlapArea(
+function calculateBuildingOverlapArea(
   posA: { x: number; y: number },
   posB: { x: number; y: number },
   dimA: BuildingDimensions = DEFAULT_BUILDING_DIMENSIONS,
@@ -42,17 +42,6 @@ export function calculateBuildingOverlapArea(
     Math.min(posA.y + dimA.h, posB.y + dimB.h) - Math.max(posA.y, posB.y),
   );
   return overlapW * overlapH;
-}
-
-export function calculateBuildingOverlapRatio(
-  posA: { x: number; y: number },
-  posB: { x: number; y: number },
-  dimA: BuildingDimensions = DEFAULT_BUILDING_DIMENSIONS,
-  dimB: BuildingDimensions = DEFAULT_BUILDING_DIMENSIONS,
-): number {
-  const area = calculateBuildingOverlapArea(posA, posB, dimA, dimB);
-  const minBuildingArea = Math.min(dimA.w * dimA.h, dimB.w * dimB.h);
-  return minBuildingArea > 0 ? area / minBuildingArea : 0;
 }
 
 export function clampBuildingPosition(
@@ -85,7 +74,7 @@ export function clampBuildingPosition(
   };
 }
 
-export function repulseBuildingFrom(
+function repulseBuildingFrom(
   sourcePos: { x: number; y: number },
   targetPos: { x: number; y: number },
   sourceDim: BuildingDimensions = DEFAULT_BUILDING_DIMENSIONS,
@@ -182,29 +171,6 @@ export function generateDefaultPositions(
       y: ((originY + row * (cellHeight + BUILDING_GAP_PX)) / height) * 100,
     });
   });
-}
-
-/**
- * Randomizes which building occupies each well-spaced grid slot.
- * Used when the facilitator clicks "Shuffle pos".
- */
-export function generateScatteredPositions(
-  count: number,
-  peoplePerBuilding = 8,
-  canvasWidth = 1050,
-  canvasHeight = 750,
-): Array<{ x: number; y: number }> {
-  if (count <= 0) return [];
-  const scattered = generateDefaultPositions(count, peoplePerBuilding, canvasWidth, canvasHeight);
-
-  // Fisher-Yates shuffle
-  for (let i = scattered.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const temp = scattered[i]!;
-    scattered[i] = scattered[j]!;
-    scattered[j] = temp;
-  }
-  return scattered;
 }
 
 export function resolveBuildingCollisions(
@@ -388,334 +354,4 @@ export function swapBuildingPositions(
     { id: draggedBuildingId, x: clampedTarget.x, y: clampedTarget.y },
     { id: targetBuildingId, x: clampedStart.x, y: clampedStart.y },
   ];
-}
-export interface SpaceOutNode {
-  id: string;
-  x: number;
-  y: number;
-  w?: number;
-  h?: number;
-}
-
-export const DEFAULT_SPACE_OUT_BOUNDS = {
-  minX: 2.5,
-  maxX: 97.5,
-  minY: 3.0,
-  maxY: 95.0,
-};
-
-export const DEFAULT_ACTION_PANEL_BOUNDS = {
-  minX: 81.0,
-  minY: 77.0,
-};
-
-const DEFAULT_FALLBACK_NODE_DIM: BuildingDimensions = {
-  w: 16,
-  h: 22,
-};
-
-/**
- * Spaces out nodes away from each other so they move apart and fill all available canvas space.
- * Uses center-of-mass dispersion, n-body force relaxation, boundary clamping, and
- * action-panel avoidance.
- */
-export function spaceOutNodes(
-  nodes: SpaceOutNode[],
-  dimensionsMap?: Record<string, BuildingDimensions>,
-  bounds = DEFAULT_SPACE_OUT_BOUNDS,
-  actionPanelBounds: { minX: number; minY: number } | null = DEFAULT_ACTION_PANEL_BOUNDS,
-  iterations = 80,
-): Array<{ id: string; x: number; y: number }> {
-  if (!nodes || nodes.length === 0) return [];
-
-  const resolved = nodes.map((n) => {
-    const dim =
-      dimensionsMap?.[n.id] ?? (n.w && n.h ? { w: n.w, h: n.h } : DEFAULT_FALLBACK_NODE_DIM);
-    const w = Math.max(4, dim.w);
-    const h = Math.max(4, dim.h);
-    return {
-      id: n.id,
-      x: n.x,
-      y: n.y,
-      w,
-      h,
-    };
-  });
-
-  if (resolved.length === 1) {
-    const n = resolved[0]!;
-    const minX = bounds.minX;
-    const maxX = Math.max(minX, bounds.maxX - n.w);
-    const minY = bounds.minY;
-    const maxY = Math.max(minY, bounds.maxY - n.h);
-    return [
-      {
-        id: n.id,
-        x: Math.round(((minX + maxX) / 2) * 10) / 10,
-        y: Math.round(((minY + maxY) / 2) * 10) / 10,
-      },
-    ];
-  }
-
-  // Helper to clamp center to keep card inside bounds and out of action panel
-  function clampCenter(cx: number, cy: number, w: number, h: number): { cx: number; cy: number } {
-    const minCx = bounds.minX + w / 2;
-    const maxCx = Math.max(minCx, bounds.maxX - w / 2);
-    const minCy = bounds.minY + h / 2;
-    const maxCy = Math.max(minCy, bounds.maxY - h / 2);
-
-    let clampedCx = Math.max(minCx, Math.min(maxCx, cx));
-    let clampedCy = Math.max(minCy, Math.min(maxCy, cy));
-
-    if (actionPanelBounds) {
-      const right = clampedCx + w / 2;
-      const bottom = clampedCy + h / 2;
-      const margin = 1.0;
-      if (right > actionPanelBounds.minX - margin && bottom > actionPanelBounds.minY - margin) {
-        const pushLeft = right - (actionPanelBounds.minX - margin);
-        const pushUp = bottom - (actionPanelBounds.minY - margin);
-        if (pushLeft <= pushUp) {
-          clampedCx -= pushLeft;
-        } else {
-          clampedCy -= pushUp;
-        }
-        clampedCx = Math.max(minCx, clampedCx);
-        clampedCy = Math.max(minCy, clampedCy);
-      }
-    }
-
-    return { cx: clampedCx, cy: clampedCy };
-  }
-
-  // 1. Center of mass & initial outward dispersion
-  const centers = resolved.map((n) => ({
-    cx: n.x + n.w / 2,
-    cy: n.y + n.h / 2,
-  }));
-
-  const avgCx = centers.reduce((sum, c) => sum + c.cx, 0) / centers.length;
-  const avgCy = centers.reduce((sum, c) => sum + c.cy, 0) / centers.length;
-
-  const targetMinX = bounds.minX + 2;
-  const targetMaxX = bounds.maxX - 2;
-  const targetMinY = bounds.minY + 2;
-  const targetMaxY = bounds.maxY - 2;
-
-  const targetCx = (targetMinX + targetMaxX) / 2;
-  const targetCy = (targetMinY + targetMaxY) / 2;
-
-  const spreadX = Math.max(...centers.map((c) => Math.abs(c.cx - avgCx)), 0.1);
-  const spreadY = Math.max(...centers.map((c) => Math.abs(c.cy - avgCy)), 0.1);
-
-  const targetHalfW = ((targetMaxX - targetMinX) / 2) * 0.88;
-  const targetHalfH = ((targetMaxY - targetMinY) / 2) * 0.88;
-
-  const scaleX = Math.max(1.2, Math.min(5.0, targetHalfW / Math.max(spreadX, 2.0)));
-  const scaleY = Math.max(1.2, Math.min(5.0, targetHalfH / Math.max(spreadY, 2.0)));
-
-  const pos = resolved.map((n, i) => {
-    let perpX = 0;
-    let perpY = 0;
-    if (spreadY < 5.0 && resolved.length > 2) {
-      perpY = ((i % 2) * 2 - 1) * targetHalfH * 0.5;
-    }
-    if (spreadX < 5.0 && resolved.length > 2) {
-      perpX = ((i % 2) * 2 - 1) * targetHalfW * 0.5;
-    }
-
-    const jitterX = ((i % 2) - 0.5) * 1.5;
-    const jitterY = (((i + 1) % 3) - 1.0) * 2.0;
-
-    const initialCx = targetCx + (centers[i]!.cx - avgCx) * scaleX + perpX + jitterX;
-    const initialCy = targetCy + (centers[i]!.cy - avgCy) * scaleY + perpY + jitterY;
-    const clamped = clampCenter(initialCx, initialCy, n.w, n.h);
-
-    return {
-      id: n.id,
-      cx: clamped.cx,
-      cy: clamped.cy,
-      w: n.w,
-      h: n.h,
-    };
-  });
-
-  // 2. Iterative force relaxation
-  const dt = 0.5;
-  for (let it = 0; it < iterations; it++) {
-    const forces = pos.map(() => ({ fx: 0, fy: 0 }));
-    const damping = 1.0 - (it / iterations) * 0.35;
-
-    // Node-to-node repulsion
-    for (let i = 0; i < pos.length; i++) {
-      for (let j = i + 1; j < pos.length; j++) {
-        const p1 = pos[i]!;
-        const p2 = pos[j]!;
-        let dx = p1.cx - p2.cx;
-        let dy = p1.cy - p2.cy;
-
-        const reqW = (p1.w + p2.w) / 2 + 3.0;
-        const reqH = (p1.h + p2.h) / 2 + 3.0;
-
-        // If almost purely horizontal or vertical, introduce slight cross-axis deflection
-        if (Math.abs(dy) < 1.0 && Math.abs(dx) < reqW) {
-          dy = (i % 2 === 0 ? 1 : -1) * 2.5;
-        }
-        if (Math.abs(dx) < 1.0 && Math.abs(dy) < reqH) {
-          dx = (i % 2 === 0 ? 1 : -1) * 2.5;
-        }
-        let nx = dx / Math.max(reqW, 1.0);
-        let ny = dy / Math.max(reqH, 1.0);
-        let dist = Math.sqrt(nx * nx + ny * ny);
-
-        if (dist < 0.001) {
-          const angle = (i * 1.57 + j) % (Math.PI * 2);
-          dx = Math.cos(angle) * 0.1;
-          dy = Math.sin(angle) * 0.1;
-          dist = 0.1;
-          nx = dx / reqW;
-          ny = dy / reqH;
-        }
-
-        let mag: number;
-        if (dist < 1.0) {
-          mag = (1.0 - dist) * 18.0 + 6.0;
-        } else {
-          mag = Math.min(4.0, 3.0 / (dist * dist));
-        }
-
-        const fx = (nx / dist) * mag * reqW * 0.5;
-        const fy = (ny / dist) * mag * reqH * 0.5;
-
-        forces[i]!.fx += fx;
-        forces[i]!.fy += fy;
-        forces[j]!.fx -= fx;
-        forces[j]!.fy -= fy;
-      }
-    }
-
-    // Boundary repulsion & Action Panel repulsion
-    for (let i = 0; i < pos.length; i++) {
-      const p = pos[i]!;
-      const minCx = bounds.minX + p.w / 2;
-      const maxCx = Math.max(minCx, bounds.maxX - p.w / 2);
-      const minCy = bounds.minY + p.h / 2;
-      const maxCy = Math.max(minCy, bounds.maxY - p.h / 2);
-
-      const marginX = 4.0;
-      const marginY = 4.0;
-
-      if (p.cx < minCx + marginX) {
-        forces[i]!.fx += ((minCx + marginX - p.cx) / marginX) * 6.0;
-      } else if (p.cx > maxCx - marginX) {
-        forces[i]!.fx -= ((p.cx - (maxCx - marginX)) / marginX) * 6.0;
-      }
-
-      if (p.cy < minCy + marginY) {
-        forces[i]!.fy += ((minCy + marginY - p.cy) / marginY) * 6.0;
-      } else if (p.cy > maxCy - marginY) {
-        forces[i]!.fy -= ((p.cy - (maxCy - marginY)) / marginY) * 6.0;
-      }
-
-      if (actionPanelBounds) {
-        const right = p.cx + p.w / 2;
-        const bottom = p.cy + p.h / 2;
-        if (right > actionPanelBounds.minX - 3.0 && bottom > actionPanelBounds.minY - 3.0) {
-          forces[i]!.fx -= 12.0;
-          forces[i]!.fy -= 12.0;
-        }
-      }
-    }
-
-    // Apply forces and clamp
-    for (let i = 0; i < pos.length; i++) {
-      const p = pos[i]!;
-      p.cx += forces[i]!.fx * dt * damping;
-      p.cy += forces[i]!.fy * dt * damping;
-
-      const clamped = clampCenter(p.cx, p.cy, p.w, p.h);
-      p.cx = clamped.cx;
-      p.cy = clamped.cy;
-    }
-  }
-
-  // 3. Final overlap push to guarantee separation
-  for (let step = 0; step < 15; step++) {
-    let hadOverlap = false;
-    for (let i = 0; i < pos.length; i++) {
-      for (let j = i + 1; j < pos.length; j++) {
-        const p1 = pos[i]!;
-        const p2 = pos[j]!;
-
-        const left1 = p1.cx - p1.w / 2;
-        const right1 = p1.cx + p1.w / 2;
-        const top1 = p1.cy - p1.h / 2;
-        const bottom1 = p1.cy + p1.h / 2;
-
-        const left2 = p2.cx - p2.w / 2;
-        const right2 = p2.cx + p2.w / 2;
-        const top2 = p2.cy - p2.h / 2;
-        const bottom2 = p2.cy + p2.h / 2;
-
-        const overlapX = Math.min(right1, right2) - Math.max(left1, left2);
-        const overlapY = Math.min(bottom1, bottom2) - Math.max(top1, top2);
-
-        if (overlapX > 0.01 && overlapY > 0.01) {
-          hadOverlap = true;
-          const minCx1 = bounds.minX + p1.w / 2;
-          const maxCx1 = Math.max(minCx1, bounds.maxX - p1.w / 2);
-          const minCx2 = bounds.minX + p2.w / 2;
-          const maxCx2 = Math.max(minCx2, bounds.maxX - p2.w / 2);
-
-          const minCy1 = bounds.minY + p1.h / 2;
-          const maxCy1 = Math.max(minCy1, bounds.maxY - p1.h / 2);
-          const minCy2 = bounds.minY + p2.h / 2;
-          const maxCy2 = Math.max(minCy2, bounds.maxY - p2.h / 2);
-
-          const roomX = p1.cx - minCx1 + (maxCx1 - p1.cx) + (p2.cx - minCx2) + (maxCx2 - p2.cx);
-          const roomY = p1.cy - minCy1 + (maxCy1 - p1.cy) + (p2.cy - minCy2) + (maxCy2 - p2.cy);
-
-          const pushX =
-            (overlapX < overlapY || Math.abs(p1.cy - p2.cy) < 1.0) && overlapX < roomX * 0.5;
-
-          if (pushX) {
-            const shift = (overlapX + 1.0) / 2;
-            if (p1.cx <= p2.cx) {
-              p1.cx -= shift;
-              p2.cx += shift;
-            } else {
-              p1.cx += shift;
-              p2.cx += shift;
-            }
-          } else {
-            const shift = (overlapY + 1.0) / 2;
-            if (p1.cy <= p2.cy) {
-              p1.cy -= shift;
-              p2.cy += shift;
-            } else {
-              p1.cy += shift;
-              p2.cy += shift;
-            }
-          }
-
-          const c1 = clampCenter(p1.cx, p1.cy, p1.w, p1.h);
-          p1.cx = c1.cx;
-          p1.cy = c1.cy;
-          const c2 = clampCenter(p2.cx, p2.cy, p2.w, p2.h);
-          p2.cx = c2.cx;
-          p2.cy = c2.cy;
-        }
-      }
-    }
-    if (!hadOverlap) break;
-  }
-
-  return pos.map((p) => {
-    const leftX = Math.round((p.cx - p.w / 2) * 10) / 10;
-    const topY = Math.round((p.cy - p.h / 2) * 10) / 10;
-    return {
-      id: p.id,
-      x: leftX,
-      y: topY,
-    };
-  });
 }

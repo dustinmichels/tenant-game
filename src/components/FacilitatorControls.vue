@@ -10,10 +10,32 @@ import { formatDiceRollEventText } from "../stores/game";
 import { roughGen } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
 
-defineProps<{
-  round: number;
-  phase: GamePhase;
-}>();
+const props = withDefaults(
+  defineProps<{
+    round: number;
+    phase: GamePhase;
+    hasBegun?: boolean;
+  }>(),
+  {
+    hasBegun: true,
+  },
+);
+
+const phaseClass = computed(() => {
+  if (!props.hasBegun) {
+    return "phase-pregame";
+  }
+  switch (props.phase) {
+    case 1:
+      return "phase-1 phase-landlord";
+    case 2:
+      return "phase-2 phase-tenant";
+    case 3:
+      return "phase-3 phase-market";
+    default:
+      return "";
+  }
+});
 
 const emit = defineEmits<{
   (e: "new-game"): void;
@@ -47,7 +69,7 @@ const dividerPaths = computed<PathInfo[]>(() => {
 </script>
 
 <template>
-  <header class="facilitator-bar">
+  <header class="facilitator-bar" :class="phaseClass">
     <div class="facilitator-bar-inner">
       <!-- Brand section -->
       <div class="brand-section">
@@ -66,6 +88,7 @@ const dividerPaths = computed<PathInfo[]>(() => {
         <RoundTracker
           :round="round"
           :phase="phase"
+          :disabled="!hasBegun"
           @next="emit('next-phase')"
           @prev="emit('prev-phase')"
           @select-phase="(p) => emit('select-phase', p)"
@@ -76,7 +99,8 @@ const dividerPaths = computed<PathInfo[]>(() => {
         <RoughButton
           variant="secondary"
           :seed="909"
-          title="Record dice roll"
+          :disabled="!hasBegun"
+          :title="!hasBegun ? 'Disabled until game begins' : 'Record dice roll'"
           @click="isDiceModalOpen = true"
         >
           <span class="dice-btn-content">
@@ -141,6 +165,26 @@ const dividerPaths = computed<PathInfo[]>(() => {
   z-index: 100;
   background-color: #fbf8f2;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  transition: background-color 0.3s ease;
+}
+
+.facilitator-bar.phase-pregame {
+  background-color: #e4e4e7;
+}
+
+.facilitator-bar.phase-1,
+.facilitator-bar.phase-landlord {
+  background-color: #fee2e2;
+}
+
+.facilitator-bar.phase-2,
+.facilitator-bar.phase-tenant {
+  background-color: #dbeafe;
+}
+
+.facilitator-bar.phase-3,
+.facilitator-bar.phase-market {
+  background-color: #dcfce7;
 }
 
 .facilitator-bar-inner {

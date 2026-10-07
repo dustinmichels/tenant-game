@@ -6,11 +6,16 @@ import type { GamePhase } from "../types/game";
 import { PHASES } from "../types/game";
 import RoughBox from "./RoughBox.vue";
 
-const props = defineProps<{
-  round: number;
-  phase: GamePhase;
-}>();
-
+const props = withDefaults(
+  defineProps<{
+    round: number;
+    phase: GamePhase;
+    disabled?: boolean;
+  }>(),
+  {
+    disabled: false,
+  },
+);
 const emit = defineEmits<{
   (e: "next"): void;
   (e: "prev"): void;
@@ -38,6 +43,7 @@ const PHASE_CONFIGS: Record<GamePhase, { name: string; gradient: string; accentC
 const currentConfig = computed(() => PHASE_CONFIGS[props.phase] || PHASE_CONFIGS[1]);
 
 function handlePhaseClick(pId: GamePhase) {
+  if (props.disabled) return;
   if (pId !== props.phase) {
     emit("select-phase", pId);
   }
@@ -55,6 +61,7 @@ function isInputElement(target: EventTarget | null): boolean {
 }
 
 onKeyStroke(["ArrowRight", "ArrowDown"], (e) => {
+  if (props.disabled) return;
   if (isInputElement(e.target)) return;
   e.preventDefault();
   emit("next");
@@ -62,6 +69,7 @@ onKeyStroke(["ArrowRight", "ArrowDown"], (e) => {
 
 onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
   if (isInputElement(e.target)) return;
+  if (props.disabled) return;
   if (!(props.round === 1 && props.phase === 1)) {
     e.preventDefault();
     emit("prev");
@@ -70,11 +78,15 @@ onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
 </script>
 
 <template>
-  <div class="round-tracker-wrapper" role="region" aria-label="Game Round and Phase Controls">
+  <div
+    class="round-tracker-wrapper"
+    :class="{ 'is-disabled': disabled }"
+    role="region"
+    aria-label="Game Round and Phase Controls"
+  >
     <RoughBox
-      :stroke="'#3f382f'"
-      :fill="'#fcfaf6'"
-      fill-style="solid"
+      :stroke="disabled ? '#a8a29e' : '#3f382f'"
+      :fill="disabled ? '#f4f4f5' : '#fcfaf6'"
       :roughness="0.8"
       :stroke-width="1.2"
       :seed="404"
@@ -84,8 +96,8 @@ onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
         <button
           type="button"
           class="font-arrow-btn back"
-          :disabled="round === 1 && phase === 1"
-          title="Previous phase (or Left Arrow key)"
+          :disabled="disabled || (round === 1 && phase === 1)"
+          :title="disabled ? 'Disabled until game begins' : 'Previous phase (or Left Arrow key)'"
           aria-label="Previous phase"
           @click="emit('prev')"
         >
@@ -95,8 +107,11 @@ onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
         <div class="tracker-main">
           <span class="round-title">Round {{ round }}</span>
           <span class="divider" aria-hidden="true">•</span>
-          <span class="phase-title" :style="{ color: currentConfig.accentColor }">
-            {{ currentConfig.name }}
+          <span
+            class="phase-title"
+            :style="{ color: disabled ? '#78716c' : currentConfig.accentColor }"
+          >
+            Phase {{ phase }}: {{ currentConfig.name }}
           </span>
           <div class="phase-dots" role="tablist" aria-label="Select phase">
             <button
@@ -104,9 +119,14 @@ onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
               :key="p.id"
               type="button"
               class="phase-dot"
-              :class="{ 'is-active': p.id === phase }"
-              :style="p.id === phase ? { backgroundColor: currentConfig.accentColor } : {}"
-              :title="`${p.name} (Phase ${p.id})`"
+              :disabled="disabled"
+              :class="{ 'is-active': p.id === phase, 'is-disabled': disabled }"
+              :style="
+                p.id === phase
+                  ? { backgroundColor: disabled ? '#a8a29e' : currentConfig.accentColor }
+                  : {}
+              "
+              :title="disabled ? 'Disabled until game begins' : `${p.name} (Phase ${p.id})`"
               :aria-label="`${p.name} (Phase ${p.id})`"
               :aria-selected="p.id === phase"
               @click="handlePhaseClick(p.id as GamePhase)"
@@ -115,8 +135,8 @@ onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
         </div>
         <button
           type="button"
-          class="font-arrow-btn forward"
-          title="Next phase (or Right Arrow key)"
+          :disabled="disabled"
+          :title="disabled ? 'Disabled until game begins' : 'Next phase (or Right Arrow key)'"
           aria-label="Next phase"
           @click="emit('next')"
         >
@@ -131,6 +151,24 @@ onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
   display: inline-flex;
   align-items: center;
   user-select: none;
+}
+
+.round-tracker-wrapper.is-disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.round-tracker-wrapper.is-disabled .tracker-content {
+  cursor: not-allowed;
+}
+
+.round-tracker-wrapper.is-disabled .round-title {
+  color: #78716c;
+}
+
+.round-tracker-wrapper.is-disabled .phase-dot {
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .tracker-box {
@@ -214,7 +252,7 @@ onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
   letter-spacing: -0.01em;
   white-space: nowrap;
   display: inline-block;
-  min-width: 84px;
+  min-width: 155px;
 }
 .phase-dots {
   display: flex;

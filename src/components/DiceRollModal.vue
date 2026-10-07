@@ -221,6 +221,7 @@ function reset() {
 function handleDone() {
   if (validRollsCount.value === 0) return;
   emit("done", total.value);
+  emit("close");
 }
 
 onKeyStroke("Enter", (e) => {
@@ -418,10 +419,6 @@ watch(
   z-index: 9998;
   background-color: rgba(28, 25, 23, 0.45);
   backdrop-filter: blur(2px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
   animation: fade-in 0.15s ease-out;
 }
 
@@ -435,19 +432,27 @@ watch(
 }
 
 .modal-dialog {
-  width: 100%;
-  max-width: 440px;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  width: calc(100% - 32px);
+  max-width: 560px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.25));
   animation: scale-up 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
 }
 
 @keyframes scale-up {
   from {
-    transform: scale(0.94);
+    transform: translate(-50%, -50%) scale(0.94);
     opacity: 0;
   }
   to {
-    transform: scale(1);
+    transform: translate(-50%, -50%) scale(1);
     opacity: 1;
   }
 }
@@ -457,10 +462,10 @@ watch(
 }
 
 .modal-content {
-  padding: 20px 24px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .modal-header {
@@ -468,7 +473,7 @@ watch(
   align-items: center;
   justify-content: space-between;
   border-bottom: 1.5px dashed #e7e5e4;
-  padding-bottom: 12px;
+  padding-bottom: 10px;
 }
 
 .title-with-icon {
@@ -516,7 +521,7 @@ watch(
   background-color: #fef3c7;
   border: 1.5px solid #fde68a;
   border-radius: 8px;
-  padding: 12px 16px;
+  padding: 8px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -550,7 +555,7 @@ watch(
 }
 
 .total-value {
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: 900;
   color: #78350f;
   letter-spacing: -0.02em;
@@ -579,7 +584,7 @@ watch(
 .rolls-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .rolls-section-header {
@@ -604,11 +609,22 @@ watch(
 
 .rolls-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  max-height: 240px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  max-height: min(340px, calc(100vh - 260px));
   overflow-y: auto;
   padding: 2px 2px;
+}
+@media (max-width: 520px) {
+  .rolls-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 380px) {
+  .rolls-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .roll-box {
@@ -616,12 +632,12 @@ watch(
   background-color: #fafaf9;
   border: 1.5px solid #d6d3d1;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 4px 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  min-height: 80px;
+  min-height: 52px;
   cursor: text;
   transition: all 0.15s ease;
   animation: box-appear 0.15s ease-out;
@@ -668,11 +684,11 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 18px;
+  min-height: 14px;
 }
 
 .roll-box-label {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 700;
   color: #78716c;
   text-transform: uppercase;
@@ -689,10 +705,10 @@ watch(
   background: none;
   border: none;
   color: #a8a29e;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: bold;
   cursor: pointer;
-  padding: 1px 4px;
+  padding: 0 2px;
   border-radius: 3px;
   line-height: 1;
   transition: all 0.12s ease;
@@ -714,19 +730,20 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 2px;
+  margin-top: 0;
 }
 
 .roll-box-input {
   width: 100%;
   text-align: center;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 800;
   color: #1c1917;
   background: transparent;
   border: none;
   outline: none;
   padding: 0;
+  height: 28px;
   font-variant-numeric: tabular-nums;
   font-family: inherit;
   -moz-appearance: textfield;
@@ -741,9 +758,8 @@ watch(
 .roll-box-input::placeholder {
   color: #d6d3d1;
   font-weight: 400;
-  font-size: 1.25rem;
+  font-size: 1.1rem;
 }
-
 /* Quick Dice & Actions */
 .rolls-actions-bar {
   display: flex;
@@ -819,7 +835,7 @@ watch(
   justify-content: flex-end;
   gap: 10px;
   border-top: 1.5px dashed #e7e5e4;
-  padding-top: 14px;
+  padding-top: 10px;
 }
 
 .btn-inner {

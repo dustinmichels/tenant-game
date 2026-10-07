@@ -6,11 +6,11 @@ The faciliator clicks "New Game" then inputs the number of buildings & typical n
 
 When they click start, the buildings get generated with tenants inside.
 
-User can click a "gear" icon in each building to adjust the number of tenants (the default is what they input at the start.)
+User can click a "pencil" icon in each building to adjust the number of tenants (the default is what they input at the start.)
 
 One random person from each building should be the "instigator" and colored a special color. Different color for each building.
 
-Buildings are initially placed left-to-right, then top-to-bottom. The layout chooses the row/column count that fits the largest readable buildings in the available canvas, keeps gutters between buildings, and reserves the right edge for the landlord office and controls. Person and building sizes decrease smoothly as the total player count grows, but never expand beyond their baseline size; small games use the extra room as space between buildings. “Shuffle pos” randomizes which building occupies each safe grid slot.
+Buildings are initially placed left-to-right, then top-to-bottom. The layout chooses the row/column count that fits the largest readable buildings in the available canvas, keeps gutters between buildings, and reserves the right edge for the landlord office and controls. Person and building sizes decrease smoothly as the total player count grows, but never expand beyond their baseline size; small games use the extra room as space between buildings.
 
 ## Gameplay
 

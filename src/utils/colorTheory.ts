@@ -2,44 +2,16 @@ import {
   differenceEuclidean,
   interpolate,
   oklch,
-  oklab,
-  rgb,
   formatHex,
   wcagContrast,
   clampChroma,
+  fixupHueLonger,
 } from "culori";
-/**
- * Color Theory Module for Tenant Game.
- *
- * Implements perceptual color science (OKLab / OKLCH) for:
- * 1. Generating distinct, divergent starting colors for N buildings based on building count.
- * 2. Combining building colors when two buildings merge into a coalition.
- * 3. Successively merging colors when a third (or N-th) building joins a coalition.
- * 4. Perceptually uniform color distance (Delta E) and WCAG contrast calculations.
- */
-
-export interface RgbColor {
-  r: number; // 0..255
-  g: number; // 0..255
-  b: number; // 0..255
-}
-
-export interface OklabColor {
-  l: number; // 0..1 (perceptual lightness)
-  a: number; // green (-) to red/magenta (+)
-  b: number; // blue (-) to yellow (+)
-}
 
 export interface OklchColor {
   l: number; // 0..1 (perceptual lightness)
   c: number; // >= 0 (chroma / saturation)
   h: number; // 0..360 (hue angle in degrees)
-}
-
-export interface HslColor {
-  h: number; // 0..360
-  s: number; // 0..100
-  l: number; // 0..100
 }
 
 export interface PaletteOptions {
@@ -50,9 +22,9 @@ export interface PaletteOptions {
 }
 
 export type PrimaryFamily = "red" | "yellow" | "blue";
-export type PrimaryPoleKey = "scarlet" | "gold" | "cobalt" | "cerulean" | "crimson" | "amber";
+type PrimaryPoleKey = "scarlet" | "gold" | "cobalt" | "cerulean" | "crimson" | "amber";
 
-export interface PrimaryPoleConfig {
+interface PrimaryPoleConfig {
   hueMin: number;
   hueMax: number;
   lMin: number;
@@ -72,7 +44,7 @@ export interface PrimaryPoleConfig {
  *
  * Every pair of poles has a guaranteed Delta E >= 0.138 (and up to 0.490 across complementary poles).
  */
-export const PRIMARY_POLES: Record<PrimaryPoleKey, PrimaryPoleConfig> = {
+const PRIMARY_POLES: Record<PrimaryPoleKey, PrimaryPoleConfig> = {
   scarlet: {
     hueMin: 26,
     hueMax: 34,
@@ -153,7 +125,7 @@ export const PRIMARY_POLES: Record<PrimaryPoleKey, PrimaryPoleConfig> = {
   },
 };
 
-export const POLE_KEYS: readonly PrimaryPoleKey[] = [
+const POLE_KEYS: readonly PrimaryPoleKey[] = [
   "scarlet",
   "gold",
   "cobalt",
@@ -161,54 +133,6 @@ export const POLE_KEYS: readonly PrimaryPoleKey[] = [
   "crimson",
   "amber",
 ];
-
-export interface PrimaryFamilyConfig {
-  hueMin: number;
-  hueMax: number;
-  lMin: number;
-  lMax: number;
-  cMin: number;
-  cMax: number;
-  defaultHue: number;
-  defaultLightness: number;
-  defaultChroma: number;
-}
-
-export const PRIMARY_CONFIGS: Record<PrimaryFamily, PrimaryFamilyConfig> = {
-  red: {
-    hueMin: 16,
-    hueMax: 34,
-    lMin: 0.56,
-    lMax: 0.64,
-    cMin: 0.19,
-    cMax: 0.23,
-    defaultHue: 25,
-    defaultLightness: 0.6,
-    defaultChroma: 0.21,
-  },
-  yellow: {
-    hueMin: 80,
-    hueMax: 98,
-    lMin: 0.74,
-    lMax: 0.82,
-    cMin: 0.16,
-    cMax: 0.2,
-    defaultHue: 88,
-    defaultLightness: 0.78,
-    defaultChroma: 0.18,
-  },
-  blue: {
-    hueMin: 246,
-    hueMax: 268,
-    lMin: 0.52,
-    lMax: 0.61,
-    cMin: 0.18,
-    cMax: 0.22,
-    defaultHue: 256,
-    defaultLightness: 0.56,
-    defaultChroma: 0.2,
-  },
-};
 
 function samplePrimaryPole(key: PrimaryPoleKey): string {
   const cfg = PRIMARY_POLES[key];
@@ -331,88 +255,12 @@ export function generatePrimaryPalette(count: number, options: PaletteOptions = 
 }
 
 // Default fallback color if parsing or inputs fail
-export const DEFAULT_COLOR = "#7c3aed";
+const DEFAULT_COLOR = "#7c3aed";
 
-/**
- * Converts sRGB channel (0..255) to linear light (0..1).
- */
-export function srgbToLinear(channel: number): number {
-  const c = Math.max(0, Math.min(255, channel)) / 255;
-  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-}
-
-/**
- * Converts linear light (0..1) back to sRGB channel (0..255).
- */
-export function linearToSrgb(linear: number): number {
-  const clamped = Math.max(0, Math.min(1, linear));
-  const s = clamped <= 0.0031308 ? clamped * 12.92 : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
-  return Math.round(Math.max(0, Math.min(255, s * 255)));
-}
-
-/**
- * Converts sRGB to OKLab perceptual color space using culori.
- */
-export function rgbToOklab(r: number, g: number, b: number): OklabColor {
-  const lab = oklab({ mode: "rgb", r: r / 255, g: g / 255, b: b / 255 });
-  return { l: lab?.l ?? 0, a: lab?.a ?? 0, b: lab?.b ?? 0 };
-}
-
-/**
- * Converts OKLab to sRGB using culori.
- */
-export function oklabToRgb(l: number, a: number, b: number): RgbColor {
-  const c = rgb({ mode: "oklab", l, a, b });
-  if (!c) return { r: 124, g: 58, b: 237 };
-  return {
-    r: Math.round(Math.max(0, Math.min(255, (c.r ?? 0) * 255))),
-    g: Math.round(Math.max(0, Math.min(255, (c.g ?? 0) * 255))),
-    b: Math.round(Math.max(0, Math.min(255, (c.b ?? 0) * 255))),
-  };
-}
-
-/**
- * Converts OKLab to cylindrical OKLCH using culori.
- */
-export function oklabToOklch(l: number, a: number, b: number): OklchColor {
-  const lch = oklch({ mode: "oklab", l, a, b });
-  return { l: lch?.l ?? 0, c: lch?.c ?? 0, h: lch?.h ?? 0 };
-}
-
-/**
- * Converts cylindrical OKLCH to OKLab using culori.
- */
-export function oklchToOklab(l: number, c: number, h: number): OklabColor {
-  const lab = oklab({ mode: "oklch", l, c, h });
-  return { l: lab?.l ?? 0, a: lab?.a ?? 0, b: lab?.b ?? 0 };
-}
-
-/**
- * Formats RGB components into standard 6-digit hex color string.
- */
-export function rgbToHex(r: number, g: number, b: number): string {
-  return formatHex({ mode: "rgb", r: r / 255, g: g / 255, b: b / 255 }) ?? DEFAULT_COLOR;
-}
-
-/**
- * Parses a color string into RGB using culori.
- */
-export function colorToRgb(color: string): RgbColor {
-  const c = rgb(color);
-  if (!c) return { r: 124, g: 58, b: 237 };
-  return {
-    r: Math.round(Math.max(0, Math.min(255, (c.r ?? 0) * 255))),
-    g: Math.round(Math.max(0, Math.min(255, (c.g ?? 0) * 255))),
-    b: Math.round(Math.max(0, Math.min(255, (c.b ?? 0) * 255))),
-  };
-}
-
-/**
- * Converts any supported CSS color string to OKLab using culori.
- */
-export function colorToOklab(color: string): OklabColor {
-  const lab = oklab(color) ?? { mode: "oklab", l: 0.5, a: 0, b: 0 };
-  return { l: lab.l ?? 0, a: lab.a ?? 0, b: lab.b ?? 0 };
+/** Converts OKLCH coordinates to a hex color string using culori. */
+function oklchToHex(l: number, c: number, h: number): string {
+  const inGamut = clampChroma({ mode: "oklch", l, c, h }, "oklch");
+  return formatHex(inGamut) ?? DEFAULT_COLOR;
 }
 
 /**
@@ -421,21 +269,6 @@ export function colorToOklab(color: string): OklabColor {
 export function colorToOklch(color: string): OklchColor {
   const lch = oklch(color) ?? { mode: "oklch", l: 0.5, c: 0, h: 0 };
   return { l: lch.l ?? 0, c: lch.c ?? 0, h: lch.h ?? 0 };
-}
-
-/**
- * Converts OKLab coordinates directly to a hex color string using culori.
- */
-export function oklabToHex(l: number, a: number, b: number): string {
-  return formatHex({ mode: "oklab", l, a, b }) ?? DEFAULT_COLOR;
-}
-
-/**
- * Converts OKLCH coordinates to a hex color string using culori.
- */
-export function oklchToHex(l: number, c: number, h: number): string {
-  const inGamut = clampChroma({ mode: "oklch", l, c, h }, "oklch");
-  return formatHex(inGamut) ?? DEFAULT_COLOR;
 }
 
 const deltaEOklab = differenceEuclidean("oklab");
@@ -503,6 +336,9 @@ export function getBuildingStartingColor(
 /**
  * Combines two building colors to form a new coalition color using culori OKLCH interpolation.
  * Satisfies: "When two buildings merge into a coalition: combine their colors to form a new color."
+ *
+ * Ensures primary pairs blend into their expected secondary colors (e.g., Yellow + Blue -> Green,
+ * rather than crossing the magenta/red boundary). Always clamps chroma to prevent sRGB clipping distortion.
  */
 export function combineTwoColors(
   colorA: string,
@@ -510,15 +346,98 @@ export function combineTwoColors(
   weightA = 0.5,
   weightB = 0.5,
 ): string {
+  const cA = oklch(colorA);
+  const cB = oklch(colorB);
+
+  if (!cA && !cB) return DEFAULT_COLOR;
+  if (!cA) return formatHex(clampChroma(cB!, "oklch")) ?? DEFAULT_COLOR;
+  if (!cB) return formatHex(clampChroma(cA!, "oklch")) ?? DEFAULT_COLOR;
+
   const totalW = Math.max(0, weightA) + Math.max(0, weightB) || 1;
   const t = Math.max(0, weightB) / totalW;
-  const blended = interpolate([colorA, colorB], "oklch")(t);
-  return formatHex(blended) ?? DEFAULT_COLOR;
+
+  let overrides: { h?: { fixup: typeof fixupHueLonger } } | undefined = undefined;
+  if (cA.h !== undefined && cB.h !== undefined) {
+    const h1 = ((cA.h % 360) + 360) % 360;
+    const h2 = ((cB.h % 360) + 360) % 360;
+
+    // Detect if one color is in the Yellow family (~40°..120°) and the other in the Blue family (~200°..285°)
+    const isYellow1 = h1 >= 40 && h1 <= 120;
+    const isYellow2 = h2 >= 40 && h2 <= 120;
+    const isBlue1 = h1 >= 200 && h1 <= 285;
+    const isBlue2 = h2 >= 200 && h2 <= 285;
+
+    if ((isYellow1 && isBlue2) || (isYellow2 && isBlue1)) {
+      const hYellow = isYellow1 ? h1 : h2;
+      const hBlue = isBlue1 ? h1 : h2;
+      // If the direct arc from yellow to blue through green is > 180°, default shortest-arc
+      // would traverse magenta. Force interpolation through the longer arc so Yellow + Blue -> Green.
+      if (hBlue - hYellow > 180) {
+        overrides = { h: { fixup: fixupHueLonger } };
+      }
+    }
+  }
+
+  try {
+    const it = interpolate([colorA, colorB], "oklch", overrides);
+    const blended = it(t);
+    const inGamut = clampChroma(blended, "oklch");
+    return formatHex(inGamut) ?? DEFAULT_COLOR;
+  } catch {
+    return DEFAULT_COLOR;
+  }
+}
+
+/**
+ * Computes a weighted circular average of multiple colors in OKLCH space.
+ * Guarantees order-independent, commutative mixing for multi-color coalitions.
+ */
+function weightedAverageOklch(colors: string[], weights: number[]): string {
+  const n = colors.length;
+  let totalW = 0;
+  let sumL = 0;
+  let sumC = 0;
+  let sumSin = 0;
+  let sumCos = 0;
+  let validCount = 0;
+
+  for (let i = 0; i < n; i++) {
+    const rawColor = colors[i];
+    if (!rawColor) continue;
+    const c = oklch(rawColor);
+    if (!c) continue;
+
+    const w = Math.max(0, weights[i] ?? 1) || 1;
+    totalW += w;
+    sumL += w * (c.l ?? 0.5);
+    sumC += w * (c.c ?? 0);
+
+    if (c.h !== undefined && !isNaN(c.h)) {
+      const rad = (c.h * Math.PI) / 180;
+      sumSin += w * Math.sin(rad);
+      sumCos += w * Math.cos(rad);
+    }
+    validCount++;
+  }
+
+  if (validCount === 0 || totalW === 0) return DEFAULT_COLOR;
+
+  const avgL = sumL / totalW;
+  const avgC = sumC / totalW;
+  let avgH = 0;
+  if (Math.abs(sumSin) > 1e-6 || Math.abs(sumCos) > 1e-6) {
+    const deg = (Math.atan2(sumSin, sumCos) * 180) / Math.PI;
+    avgH = deg < 0 ? deg + 360 : deg;
+  }
+
+  const inGamut = clampChroma({ mode: "oklch", l: avgL, c: avgC, h: avgH }, "oklch");
+  return formatHex(inGamut) ?? DEFAULT_COLOR;
 }
 
 /**
  * Merges multiple building colors into a single harmonious, vibrant coalition color.
- * Blends progressive coalitions using weighted pairwise color-wheel mixing.
+ * For 2 colors, uses combineTwoColors with the intentional subtractive hue path.
+ * For 3+ colors, computes an order-independent weighted circular average in OKLCH space.
  */
 export function mergeColors(colors: string[], weights?: number[]): string {
   if (!colors || colors.length === 0) return DEFAULT_COLOR;
@@ -527,33 +446,11 @@ export function mergeColors(colors: string[], weights?: number[]): string {
   const n = colors.length;
   const wList = weights && weights.length === n ? weights : Array(n).fill(1);
 
-  let accColor = colors[0]!;
-  let accWeight = Math.max(0, wList[0]!) || 1;
-
-  for (let i = 1; i < n; i++) {
-    const nextW = Math.max(0, wList[i]!) || 1;
-    accColor = combineTwoColors(accColor, colors[i]!, accWeight, nextW);
-    accWeight += nextW;
+  if (n === 2) {
+    return combineTwoColors(colors[0]!, colors[1]!, wList[0]!, wList[1]!);
   }
 
-  return accColor;
-}
-
-/**
- * Merges an existing coalition color with a newly joined building color.
- * Satisfies: "When a third building combines with that coalition, merge the colors again."
- *
- * @param coalitionColor The existing merged color of the coalition
- * @param newBuildingColor The starting color of the new building joining the coalition
- * @param existingBuildingCount Number of buildings already in the coalition (default 2)
- */
-export function mergeCoalitionWithBuilding(
-  coalitionColor: string,
-  newBuildingColor: string,
-  existingBuildingCount = 2,
-): string {
-  const existingWeight = Math.max(1, existingBuildingCount);
-  return combineTwoColors(coalitionColor, newBuildingColor, existingWeight, 1);
+  return weightedAverageOklch(colors, wList);
 }
 
 /**
@@ -632,22 +529,4 @@ export function computeCoalitionColor(
  */
 export function getContrastTextColor(color: string): string {
   return wcagContrast(color, "#1f1b16") >= wcagContrast(color, "#ffffff") ? "#1f1b16" : "#ffffff";
-}
-
-/**
- * Returns an rgba() background tint string for paper card styling.
- */
-export function getLightTint(color: string, alpha = 0.12): string {
-  const { r, g, b } = colorToRgb(color);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-/**
- * Returns a CSS gradient representing the combined colors of coalition members,
- * or a solid color string if only 1 color is provided.
- */
-export function getCoalitionGradient(colors: string[], angle = 135): string {
-  if (colors.length === 0) return DEFAULT_COLOR;
-  if (colors.length === 1) return colors[0]!;
-  return `linear-gradient(${angle}deg, ${colors.join(", ")})`;
 }

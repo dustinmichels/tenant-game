@@ -1,7 +1,7 @@
 export const PERSON_ASPECT_RATIO = 0.68;
 export const BUILDING_GAP_PX = 24;
 
-export const RESIDENTIAL_AREA = {
+const RESIDENTIAL_AREA = {
   x: 0.03,
   y: 0.04,
   width: 0.72,

@@ -1,7 +1,7 @@
 import rough from "roughjs";
-import type { Options, PathInfo } from "roughjs/bin/core";
+import type { PathInfo } from "roughjs/bin/core";
 
-export type { Options, PathInfo };
+export type { PathInfo };
 
 // Shared Rough.js generator instance
 export const roughGen = rough.generator();

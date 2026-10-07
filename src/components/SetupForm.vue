@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, watch, onMounted, onUnmounted, shallowRef } from "vue";
+import { computed, watch, shallowRef } from "vue";
 import { CornerDownLeft, ArrowRight } from "lucide-vue-next";
+import { useEventListener } from "@vueuse/core";
 import RoughBox from "./RoughBox.vue";
 import ParallaxCityscape from "./ParallaxCityscape.vue";
 import RoughButton from "./RoughButton.vue";
@@ -52,24 +53,14 @@ const defaultMoneyForProps = calculateDefaultLandlordMoney(
   props.initialBuildings ?? 4,
   props.initialPeople ?? 8,
 );
-const oldBuildingsOnlyFormula = (props.initialBuildings ?? 4) * 50_000;
-const old50kFormula = (props.initialBuildings ?? 4) * (props.initialPeople ?? 8) * 50_000;
-const isOldFormula =
+const hasCustomStartingMoney =
   props.initialLandlordMoney !== undefined &&
   props.initialLandlordMoney !== null &&
-  (props.initialLandlordMoney === oldBuildingsOnlyFormula ||
-    props.initialLandlordMoney === old50kFormula) &&
   props.initialLandlordMoney !== defaultMoneyForProps;
 
-const isMoneyManuallyEdited = shallowRef(
-  props.initialLandlordMoney !== undefined &&
-    props.initialLandlordMoney !== null &&
-    !isOldFormula &&
-    props.initialLandlordMoney !== defaultMoneyForProps,
-);
-
+const isMoneyManuallyEdited = shallowRef(hasCustomStartingMoney);
 const landlordStartingMoney = shallowRef<number | null>(
-  props.initialLandlordMoney !== undefined && props.initialLandlordMoney !== null && !isOldFormula
+  hasCustomStartingMoney
     ? props.initialLandlordMoney
     : calculateDefaultLandlordMoney(buildingCount.value, peoplePerBuilding.value),
 );
@@ -149,13 +140,7 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => {
-  window.addEventListener("keydown", handleKeydown);
-});
-
-onUnmounted(() => {
-  window.removeEventListener("keydown", handleKeydown);
-});
+useEventListener(window, "keydown", handleKeydown);
 </script>
 
 <template>

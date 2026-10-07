@@ -1,7 +1,13 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import { setActivePinia, createPinia } from "pinia";
 import piniaPluginPersistedstate from "pinia-plugin-persistedstate";
-import { useGameStore } from "../game";
+import {
+  useGameStore,
+  formatDiceRollEventText,
+  formatSpendEventText,
+  formatEarnEventText,
+} from "../game";
+import type { Building, Tenant } from "../../types/game";
 
 describe("game store phase navigation", () => {
   beforeEach(() => {
@@ -51,7 +57,7 @@ describe("game store tallies change tracking", () => {
     expect(store.tallies[1]?.evictions).toBe(0);
 
     const b1 = store.buildings[0]!;
-    const nonInstigatorB1 = b1.tenants.find((t) => !t.isInstigator)!;
+    const nonInstigatorB1 = b1.tenants.find((t: Tenant) => !t.isInstigator)!;
 
     // Tenant in B1 joins union -> B1 now has 2 members -> totalOrganized = 2
     store.toggleUnion(b1.id, nonInstigatorB1.id, true);
@@ -59,7 +65,7 @@ describe("game store tallies change tracking", () => {
     expect(store.tallies[1]?.organizedChange).toBe(2);
 
     // Evict a tenant in B1 in round 1
-    const tenantToEvict = b1.tenants.find((t) => !t.inUnion && !t.isInstigator)!;
+    const tenantToEvict = b1.tenants.find((t: Tenant) => !t.inUnion && !t.isInstigator)!;
     store.toggleEviction(b1.id, tenantToEvict.id, true);
     expect(store.tallies[1]?.evictions).toBe(1);
     expect(store.tallies[1]?.totalEvictions).toBe(1);
@@ -78,14 +84,16 @@ describe("game store tallies change tracking", () => {
     expect(store.tallies[2]?.totalEvictions).toBe(1);
 
     // Another tenant in B1 joins union in round 2 -> totalOrganized = 3
-    const anotherTenant = b1.tenants.find((t) => !t.inUnion && !t.isInstigator && !t.isEvicted)!;
+    const anotherTenant = b1.tenants.find(
+      (t: Tenant) => !t.inUnion && !t.isInstigator && !t.isEvicted,
+    )!;
     store.toggleUnion(b1.id, anotherTenant.id, true);
     expect(store.tallies[2]?.totalOrganized).toBe(3);
     expect(store.tallies[2]?.organizedChange).toBe(1);
 
     // Evict another tenant in round 2
     const b2 = store.buildings[1]!;
-    const b2Tenant = b2.tenants.find((t) => !t.inUnion && !t.isInstigator)!;
+    const b2Tenant = b2.tenants.find((t: Tenant) => !t.inUnion && !t.isInstigator)!;
     store.toggleEviction(b2.id, b2Tenant.id, true);
     expect(store.tallies[2]?.evictions).toBe(1);
     expect(store.tallies[2]?.totalEvictions).toBe(2);
@@ -162,7 +170,7 @@ describe("game store eviction event logging", () => {
     expect(store.events.length).toBe(eventCountAfterFirst);
   });
 });
-describe("game store showLandlord and spaceOutPositions", () => {
+describe("game store showLandlord", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     if (typeof localStorage !== "undefined") {
@@ -183,44 +191,6 @@ describe("game store showLandlord and spaceOutPositions", () => {
     store.setShowLandlord(false);
     expect(store.showLandlord).toBe(false);
   });
-
-  it("spaces out building positions and landlord position when showLandlord is true", () => {
-    const store = useGameStore();
-    store.setupGame(4, 4);
-
-    // Clump buildings together artificially
-    store.buildings[0]!.x = 10;
-    store.buildings[0]!.y = 10;
-    store.buildings[1]!.x = 12;
-    store.buildings[1]!.y = 10;
-    store.buildings[2]!.x = 10;
-    store.buildings[2]!.y = 12;
-    store.buildings[3]!.x = 12;
-    store.buildings[3]!.y = 12;
-
-    store.spaceOutPositions();
-
-    const xs = store.buildings.map((b) => b.x);
-    const ys = store.buildings.map((b) => b.y);
-    const spreadX = Math.max(...xs) - Math.min(...xs);
-    const spreadY = Math.max(...ys) - Math.min(...ys);
-
-    // Spaced out should have a much larger spread than 2%
-    expect(spreadX).toBeGreaterThan(30);
-    expect(spreadY).toBeGreaterThan(30);
-  });
-
-  it("spaces out buildings without moving landlord when showLandlord is false", () => {
-    const store = useGameStore();
-    store.setupGame(4, 4);
-    store.setShowLandlord(false);
-
-    const initialLandlordPos = { ...store.landlordPosition };
-    store.spaceOutPositions();
-
-    expect(store.landlordPosition.x).toBe(initialLandlordPos.x);
-    expect(store.landlordPosition.y).toBe(initialLandlordPos.y);
-  });
 });
 
 describe("game store pinia-plugin-persistedstate", () => {
@@ -234,5 +204,287 @@ describe("game store pinia-plugin-persistedstate", () => {
     store.setupGame(3, 5);
     expect(store.totalBuildings).toBe(3);
     expect(store.totalTenants).toBe(15);
+  });
+});
+
+describe("game store dice roll event formatting", () => {
+  it("formats dice roll events as 'Group rolled XX'", () => {
+    expect(formatDiceRollEventText(14)).toBe("🎲 Group rolled 14");
+    expect(formatDiceRollEventText(7)).toBe("🎲 Group rolled 7");
+    expect(formatDiceRollEventText(0)).toBe("🎲 Group rolled 0");
+  });
+
+  it("records dice roll events as general events", () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useGameStore();
+    store.setupGame(2, 3);
+
+    store.addEvent(formatDiceRollEventText(12));
+    expect(store.events.length).toBe(1);
+    expect(store.events[0]!.text).toBe("🎲 Group rolled 12");
+    expect(store.events[0]!.type).toBe("general");
+  });
+});
+
+describe("game store edit buildings toggle", () => {
+  it("initializes isEditBuildings to true and aliases isEditPosition and canEdit", () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useGameStore();
+    expect(store.canEdit).toBe(true);
+    expect(store.isEditBuildings).toBe(true);
+    expect(store.isEditPosition).toBe(true);
+
+    store.canEdit = false;
+    expect(store.canEdit).toBe(false);
+    expect(store.isEditBuildings).toBe(false);
+    expect(store.isEditPosition).toBe(false);
+  });
+
+  it("toggles canEdit off and marks hasBegun to true when beginGame is called", () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useGameStore();
+    store.setupGame(3, 4);
+
+    // After setupGame, before begin: canEdit is true, hasBegun is false
+    expect(store.canEdit).toBe(true);
+    expect(store.isEditBuildings).toBe(true);
+    expect(store.isEditPosition).toBe(true);
+    expect(store.hasBegun).toBe(false);
+
+    // Begin game
+    store.beginGame();
+
+    // After beginGame: canEdit switched to false, hasBegun switched to true
+    expect(store.canEdit).toBe(false);
+    expect(store.isEditBuildings).toBe(false);
+    expect(store.isEditPosition).toBe(false);
+    expect(store.hasBegun).toBe(true);
+  });
+
+  it("resets hasBegun to false on resetGame", () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useGameStore();
+    store.setupGame(2, 2);
+    store.beginGame();
+    expect(store.hasBegun).toBe(true);
+
+    store.resetGame();
+    expect(store.hasBegun).toBe(false);
+    expect(store.canEdit).toBe(true);
+  });
+});
+
+describe("game store event undo functionality", () => {
+  beforeEach(() => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+  });
+
+  it("undoes a spend event, restoring landlord funds and spending tallies", () => {
+    const store = useGameStore();
+    store.setupGame(2, 4, 200000);
+
+    store.spendLandlordMoney(50000);
+    expect(store.landlordMoney).toBe(150000);
+    expect(store.tallies[1]?.landlordSpending).toBe(50000);
+    expect(store.events.length).toBe(1);
+
+    const spendEvent = store.events[0]!;
+    expect(spendEvent.type).toBe("spend");
+    expect(spendEvent.action?.type).toBe("spend");
+
+    const success = store.undoEvent(spendEvent.id);
+    expect(success).toBe(true);
+    expect(store.landlordMoney).toBe(200000);
+    expect(store.tallies[1]?.landlordSpending).toBeNull();
+    expect(store.tallies[1]?.landlordRemaining).toBe(200000);
+    expect(store.events.length).toBe(0);
+  });
+
+  it("undoes an earn event, deducting landlord funds and updating tallies", () => {
+    const store = useGameStore();
+    store.setupGame(2, 4, 100000);
+
+    store.earnLandlordMoney(50000);
+    expect(store.landlordMoney).toBe(150000);
+    expect(store.events.length).toBe(1);
+
+    const earnEvent = store.events[0]!;
+    expect(earnEvent.type).toBe("earn");
+    expect(earnEvent.action?.type).toBe("earn");
+
+    const success = store.undoEvent(earnEvent.id);
+    expect(success).toBe(true);
+    expect(store.landlordMoney).toBe(100000);
+    expect(store.events.length).toBe(0);
+  });
+
+  it("undoes a join union event, removing union status and updating tallies", () => {
+    const store = useGameStore();
+    store.setupGame(2, 4);
+
+    const building = store.buildings[0]!;
+    const tenant = building.tenants.find((t) => !t.isInstigator && !t.inUnion)!;
+    const prevUnionCount = store.unionTenantsCount;
+
+    store.toggleUnion(building.id, tenant.id, true);
+    expect(tenant.inUnion).toBe(true);
+    expect(store.unionTenantsCount).toBe(2);
+
+    const unionEvent = store.events.find((e) => e.action?.tenantId === tenant.id)!;
+    expect(unionEvent).toBeDefined();
+
+    const success = store.undoEvent(unionEvent.id);
+    expect(success).toBe(true);
+    expect(tenant.inUnion).toBe(false);
+    expect(store.unionTenantsCount).toBe(prevUnionCount);
+    expect(store.events.find((e) => e.id === unionEvent.id)).toBeUndefined();
+  });
+
+  it("undoes an eviction event, removing eviction status and updating tallies across rounds", () => {
+    const store = useGameStore();
+    store.setupGame(2, 4);
+
+    const building = store.buildings[0]!;
+    const tenant = building.tenants[0]!;
+
+    store.toggleEviction(building.id, tenant.id, true);
+    expect(tenant.isEvicted).toBe(true);
+    expect(store.tallies[1]?.evictions).toBe(1);
+
+    // Advance to round 2
+    store.nextPhase();
+    store.nextPhase();
+    store.nextPhase();
+    expect(store.round).toBe(2);
+    expect(store.tallies[2]?.totalEvictions).toBe(1);
+
+    const evictEvent = store.events.find((e) => e.action?.type === "evict")!;
+    expect(evictEvent).toBeDefined();
+
+    const success = store.undoEvent(evictEvent.id);
+    expect(success).toBe(true);
+    expect(tenant.isEvicted).toBe(false);
+    expect(tenant.evictedRound).toBeUndefined();
+    expect(store.tallies[1]?.evictions).toBe(0);
+    expect(store.tallies[2]?.totalEvictions).toBe(0);
+    expect(store.events.length).toBe(0);
+  });
+
+  it("undoes a coalition connection event, disconnecting the coalition and updating tallies", () => {
+    const store = useGameStore();
+    store.setupGame(2, 4);
+
+    const b1 = store.buildings[0]!;
+    const b2 = store.buildings[1]!;
+
+    store.connectCoalition(b1.id, b2.id);
+    expect(store.coalitionConnections.length).toBe(1);
+
+    const coalitionEvent = store.events.find((e) => e.action?.type === "connectCoalition")!;
+    expect(coalitionEvent).toBeDefined();
+
+    const success = store.undoEvent(coalitionEvent.id);
+    expect(success).toBe(true);
+    expect(store.coalitionConnections.length).toBe(0);
+    expect(store.events.find((e) => e.id === coalitionEvent.id)).toBeUndefined();
+  });
+
+  it("undoes a custom note or dice roll event cleanly", () => {
+    const store = useGameStore();
+    store.setupGame(2, 4);
+
+    store.addEvent("Custom note from facilitator");
+    expect(store.events.length).toBe(1);
+
+    const eventId = store.events[0]!.id;
+    store.undoEvent(eventId);
+    expect(store.events.length).toBe(0);
+  });
+});
+
+describe("game store event history persistence across rounds", () => {
+  beforeEach(() => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+  });
+
+  it("preserves events throughout the entire game across round transitions", () => {
+    const store = useGameStore();
+    store.setupGame(2, 4, 300000);
+
+    // Round 1 actions
+    store.spendLandlordMoney(50000);
+    store.addEvent("Round 1 meeting note");
+    expect(store.events.length).toBe(2);
+    expect(store.events[0]!.round).toBe(1);
+    expect(store.events[1]!.round).toBe(1);
+
+    // Advance through Phase 1 -> Phase 2 -> Phase 3 -> Phase 1 (Round 2)
+    store.nextPhase();
+    expect(store.phase).toBe(2);
+    expect(store.events.length).toBe(2);
+
+    store.nextPhase();
+    expect(store.phase).toBe(3);
+    expect(store.events.length).toBe(2);
+
+    store.nextPhase();
+    expect(store.round).toBe(2);
+    expect(store.phase).toBe(1);
+
+    // Events are NOT cleared!
+    expect(store.events.length).toBe(2);
+
+    // Round 2 actions
+    store.spendLandlordMoney(25000);
+    expect(store.events.length).toBe(3);
+    expect(store.events[2]!.round).toBe(2);
+
+    // JSON representation contains all 3 events
+    const parsedJson = JSON.parse(store.eventsJson);
+    expect(Array.isArray(parsedJson)).toBe(true);
+    expect(parsedJson.length).toBe(3);
+    expect(parsedJson[0].text).toContain("Landlord spends");
+    expect(parsedJson[1].text).toBe("Round 1 meeting note");
+    expect(parsedJson[2].round).toBe(2);
+  });
+});
+
+describe("landlord event text formatting and capitalization", () => {
+  it("formats spend events with capitalized Landlord", () => {
+    expect(formatSpendEventText(50000)).toBe("Landlord spends 50k");
+    expect(formatSpendEventText(1000000)).toBe("Landlord spends 1m");
+    expect(formatSpendEventText(25000)).toBe("Landlord spends 25k");
+    expect(formatSpendEventText(1234)).toBe("Landlord spends $1,234");
+  });
+
+  it("formats earn events with capitalized Landlord", () => {
+    expect(formatEarnEventText(50000)).toBe("Landlord earns 50k");
+    expect(formatEarnEventText(2000000)).toBe("Landlord earns 2m");
+    expect(formatEarnEventText(75000)).toBe("Landlord earns 75k");
+    expect(formatEarnEventText(999)).toBe("Landlord earns $999");
+  });
+
+  it("auto-capitalizes manually added events starting with landlord", () => {
+    setActivePinia(createPinia());
+    const store = useGameStore();
+    store.setupGame(2, 4);
+
+    store.addEvent("landlord spends 50k");
+    expect(store.events[0]!.text).toBe("Landlord spends 50k");
+    expect(store.events[0]!.type).toBe("spend");
+
+    store.addEvent("landlord earns 10k");
+    expect(store.events[1]!.text).toBe("Landlord earns 10k");
+    expect(store.events[1]!.type).toBe("earn");
+
+    store.addEvent("landlord files eviction notice");
+    expect(store.events[2]!.text).toBe("Landlord files eviction notice");
+    expect(store.events[2]!.type).toBe("general");
   });
 });

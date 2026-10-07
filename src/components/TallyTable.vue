@@ -1,24 +1,22 @@
 <script setup lang="ts">
-import { computed, shallowRef } from "vue";
-import type {
-  Building,
-  RoundTally,
-  CoalitionGroup,
-  GameEvent,
-  EventTextSegment,
-} from "../types/game";
-import { parseEventSegments } from "../utils/eventLog";
+import { computed, shallowRef, watch, nextTick, onMounted, useTemplateRef } from "vue";
+import type { Building, RoundTally, CoalitionGroup, GameEvent } from "../types/game";
+import {
+  parseEventSegments,
+  isSpendEvent,
+  isEarnEvent,
+  type EventTextSegment,
+} from "../utils/eventLog";
 import {
   getBuildingUnionCount,
   getTotalUnionCount,
   getCoalitionUnionCount,
-  isSpendEvent,
-  isEarnEvent,
-} from "../types/game";
+} from "../utils/coalitions";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
 import LandlordFundsModal from "./LandlordFundsModal.vue";
-import { Banknote, X } from "lucide-vue-next";
+import UndoEventModal from "./UndoEventModal.vue";
+import { Banknote, X, Undo2 } from "lucide-vue-next";
 import {
   formatCurrency,
   formatCompactCurrency,
@@ -32,7 +30,6 @@ const props = withDefaults(
     buildings: Building[];
     landlordMoney?: number;
     landlordStartingMoney?: number;
-    coalitionCount?: number;
     coalitions?: CoalitionGroup[];
     events?: GameEvent[];
     buildingColorMap?: Record<string, string>;
@@ -40,7 +37,6 @@ const props = withDefaults(
   {
     landlordMoney: undefined,
     landlordStartingMoney: undefined,
-    coalitionCount: 0,
     coalitions: () => [],
     events: () => [],
     buildingColorMap: () => ({}),
@@ -50,11 +46,22 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: "add-event", text: string): void;
   (e: "remove-event", id: string): void;
+  (e: "undo-event", id: string): void;
   (e: "spend-landlord-money", amount?: number): void;
   (e: "earn-landlord-money", amount?: number): void;
 }>();
 
 const isLandlordModalOpen = shallowRef(false);
+const isUndoModalOpen = shallowRef(false);
+const eventToUndo = shallowRef<GameEvent | null>(null);
+const selectedRoundFilter = shallowRef<number | "all">(props.currentRound);
+
+watch(
+  () => props.currentRound,
+  (newRound) => {
+    selectedRoundFilter.value = newRound;
+  },
+);
 
 function handleSpendLandlordMoney(amount: number) {
   emit("spend-landlord-money", amount);
@@ -75,6 +82,65 @@ function handleAddEvent() {
 
 function handleQuickSpend() {
   emit("spend-landlord-money", 50000);
+}
+
+const filteredEvents = computed(() => {
+  if (!props.events) return [];
+  if (selectedRoundFilter.value === "all") return props.events;
+  return props.events.filter((e) => (e.round ?? props.currentRound) === selectedRoundFilter.value);
+});
+
+const selectableRounds = computed(() => {
+  const rounds = new Set<number>(roundNumbers.value);
+  if (props.events) {
+    for (const e of props.events) {
+      if (typeof e.round === "number") {
+        rounds.add(e.round);
+      }
+    }
+  }
+  rounds.add(props.currentRound);
+  return Array.from(rounds).sort((a, b) => a - b);
+});
+
+const eventsListRef = useTemplateRef<HTMLElement>("eventsListRef");
+
+function scrollToLatest() {
+  nextTick(() => {
+    const el = eventsListRef.value;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  });
+}
+
+onMounted(() => {
+  scrollToLatest();
+});
+
+watch(
+  [() => filteredEvents.value.length, selectedRoundFilter],
+  () => {
+    scrollToLatest();
+  },
+  { flush: "post" },
+);
+
+function handleRequestUndo(event: GameEvent) {
+  eventToUndo.value = event;
+  isUndoModalOpen.value = true;
+}
+
+function handleConfirmUndo(eventId: string) {
+  emit("undo-event", eventId);
+  emit("remove-event", eventId);
+  isUndoModalOpen.value = false;
+  eventToUndo.value = null;
+}
+
+function handleCloseUndoModal() {
+  isUndoModalOpen.value = false;
+  eventToUndo.value = null;
 }
 
 const roundNumbers = computed(() => {
@@ -204,7 +270,10 @@ const eventSegmentsMap = computed(() => {
   const map = new Map<string, EventTextSegment[]>();
   const colorMap = effectiveBuildingColorMap.value;
   for (const event of props.events) {
-    map.set(event.id, parseEventSegments(event.text, props.buildings, colorMap, event.buildingId));
+    const text = /^landlord\b/i.test(event.text)
+      ? event.text.charAt(0).toUpperCase() + event.text.slice(1)
+      : event.text;
+    map.set(event.id, parseEventSegments(text, props.buildings, colorMap, event.buildingId));
   }
   return map;
 });
@@ -251,20 +320,45 @@ const eventSegmentsMap = computed(() => {
               {{ events.length }}
             </span>
           </div>
+
+          <div v-if="events && events.length > 0" class="events-header-actions">
+            <select
+              v-if="selectableRounds.length > 1 || currentRound > 1"
+              v-model="selectedRoundFilter"
+              class="events-round-select"
+              title="Filter events by round"
+              aria-label="Filter events by round"
+            >
+              <option value="all">All Rounds</option>
+              <option v-for="r in selectableRounds" :key="r" :value="r">Round {{ r }}</option>
+            </select>
+          </div>
         </div>
 
         <!-- Bullet list of events: general events are grey/blue, spending money is red, earning money is green -->
-        <ul v-if="events && events.length > 0" class="events-list">
+        <ul
+          v-if="filteredEvents && filteredEvents.length > 0"
+          ref="eventsListRef"
+          class="events-list"
+        >
           <li
-            v-for="event in events"
+            v-for="event in filteredEvents"
             :key="event.id"
             class="event-bullet-item"
             :class="{ 'is-spend': isSpendEvent(event), 'is-earn': isEarnEvent(event) }"
           >
+            <span v-if="event.round" class="event-round-tag" :title="`Round ${event.round}`">
+              R{{ event.round }}
+            </span>
             <span class="event-text">
               <template
                 v-for="(seg, sIdx) in eventSegmentsMap.get(event.id) ?? [
-                  { text: event.text, isBuilding: false },
+                  {
+                    text: /^landlord\b/i.test(event.text)
+                      ? event.text.charAt(0).toUpperCase() + event.text.slice(1)
+                      : event.text,
+                    isBuilding: false,
+                  },
                 ]"
                 :key="sIdx"
               >
@@ -279,16 +373,20 @@ const eventSegmentsMap = computed(() => {
             </span>
             <button
               type="button"
-              class="event-remove-btn"
-              title="Remove event"
-              aria-label="Remove event"
-              @click="emit('remove-event', event.id)"
+              class="event-undo-btn event-remove-btn"
+              title="Undo event"
+              :aria-label="`Undo ${event.text}`"
+              @click="handleRequestUndo(event)"
             >
-              <X :size="11" :stroke-width="1.5" />
+              <Undo2 :size="11" :stroke-width="1.8" />
             </button>
           </li>
         </ul>
-        <p v-else class="events-empty-hint">No events recorded yet.</p>
+        <p v-else class="events-empty-hint">
+          {{
+            events && events.length > 0 ? "No events in selected round." : "No events recorded yet."
+          }}
+        </p>
 
         <!-- Input to record a new event -->
         <form class="event-input-form" @submit.prevent="handleAddEvent">
@@ -296,7 +394,7 @@ const eventSegmentsMap = computed(() => {
             v-model="newEventText"
             type="text"
             class="event-input"
-            placeholder="Record event... (e.g. landlord spends 50k)"
+            placeholder="Record event... (e.g. Landlord spends 50k)"
             aria-label="Record event"
           />
           <button
@@ -309,6 +407,14 @@ const eventSegmentsMap = computed(() => {
           </button>
         </form>
       </div>
+
+      <!-- Undo Event Confirmation Modal -->
+      <UndoEventModal
+        :show="isUndoModalOpen"
+        :event="eventToUndo"
+        @close="handleCloseUndoModal"
+        @confirm="handleConfirmUndo"
+      />
 
       <!-- Tally Table (Read Only) -->
       <div class="tally-table-wrapper">
@@ -399,80 +505,119 @@ const eventSegmentsMap = computed(() => {
     <!-- Running Counts / Summary Metrics (Pinned to bottom of sidebar) -->
     <div class="tally-footer-card">
       <div class="metrics-section">
-        <RoughBox
-          :stroke="'#a89c8a'"
-          :fill="'#faf7f2'"
-          fill-style="solid"
-          :roughness="0.8"
-          :stroke-width="1.0"
-          :seed="901"
-          class="metric-box"
-        >
-          <div class="metric-pill" :title="`${buildingCount} total buildings`">
-            <span class="metric-label">Buildings</span>
-            <span class="metric-value">{{ buildingCount }}</span>
-          </div>
-        </RoughBox>
-
-        <RoughBox
-          :stroke="'#292524'"
-          :fill="'#fef3c7'"
-          fill-style="solid"
-          :roughness="1.0"
-          :stroke-width="1.3"
-          :seed="903"
-          class="metric-box"
-        >
-          <div
-            class="metric-pill highlight"
-            :title="`${totalTenants} total tenants across all buildings`"
+        <div class="metrics-row">
+          <RoughBox
+            :stroke="'#a89c8a'"
+            :fill="'#faf7f2'"
+            fill-style="solid"
+            :roughness="0.8"
+            :stroke-width="1.0"
+            :seed="901"
+            class="metric-box"
           >
-            <span class="metric-label">Tenants</span>
-            <span class="metric-value">{{ totalTenants }}</span>
-          </div>
-        </RoughBox>
-
-        <RoughBox
-          :stroke="'#15803d'"
-          :fill="'#dcfce7'"
-          fill-style="solid"
-          :roughness="0.9"
-          :stroke-width="1.1"
-          :seed="904"
-          class="metric-box"
-        >
-          <div
-            class="metric-pill union"
-            :title="`${unionTenantsCount} of ${totalTenants} tenants in union (${unionPercent}%)`"
-          >
-            <span class="metric-label">In Union</span>
-            <div class="metric-value-row">
-              <span class="metric-value">{{ unionTenantsCount }}</span>
-              <span class="metric-percent">({{ unionPercent }}%)</span>
+            <div class="metric-pill" :title="`${buildingCount} total buildings`">
+              <span class="metric-label">Buildings</span>
+              <span class="metric-value">{{ buildingCount }}</span>
             </div>
-          </div>
-        </RoughBox>
+          </RoughBox>
 
-        <RoughBox
-          :stroke="'#7c3aed'"
-          :fill="'#f5f3ff'"
-          fill-style="solid"
-          :roughness="0.9"
-          :stroke-width="1.1"
-          :seed="908"
-          class="metric-box"
-        >
-          <div
-            class="metric-pill coalition"
-            :title="`${coalitionTenantsCount} of ${totalTenants} tenants in coalition (${coalitionPercent}%)`"
+          <RoughBox
+            :stroke="'#292524'"
+            :fill="'#fef3c7'"
+            fill-style="solid"
+            :roughness="1.0"
+            :stroke-width="1.3"
+            :seed="903"
+            class="metric-box"
           >
-            <span class="metric-label">In Coalition</span>
-            <div class="metric-value-row">
-              <span class="metric-value">{{ coalitionTenantsCount }}</span>
-              <span class="metric-percent">({{ coalitionPercent }}%)</span>
+            <div
+              class="metric-pill highlight"
+              :title="`${totalTenants} total tenants across all buildings`"
+            >
+              <span class="metric-label">Tenants</span>
+              <span class="metric-value">{{ totalTenants }}</span>
             </div>
-          </div>
-        </RoughBox>
+          </RoughBox>
+
+          <RoughBox
+            :stroke="'#78350f'"
+            :fill="'#fef3c7'"
+            fill-style="solid"
+            :roughness="0.9"
+            :stroke-width="1.2"
+            :seed="905"
+            class="metric-box metric-landlord-funds"
+          >
+            <div
+              class="metric-pill landlord-funds"
+              :title="`Remaining landlord funds: ${formatCurrency(currentLandlordMoney)}`"
+            >
+              <span class="metric-label">Landlord $</span>
+              <span class="metric-value money-highlight">{{
+                formatCompactCurrency(currentLandlordMoney)
+              }}</span>
+            </div>
+          </RoughBox>
+        </div>
+
+        <div class="metrics-row">
+          <RoughBox
+            :stroke="'#15803d'"
+            :fill="'#dcfce7'"
+            fill-style="solid"
+            :roughness="0.9"
+            :stroke-width="1.1"
+            :seed="904"
+            class="metric-box"
+          >
+            <div
+              class="metric-pill union"
+              :title="`${unionTenantsCount} of ${totalTenants} tenants in union (${unionPercent}%)`"
+            >
+              <span class="metric-label">In Union</span>
+              <div class="metric-value-row">
+                <span class="metric-value">{{ unionTenantsCount }}</span>
+                <span class="metric-percent">({{ unionPercent }}%)</span>
+              </div>
+            </div>
+          </RoughBox>
+
+          <RoughBox
+            :stroke="'#7c3aed'"
+            :fill="'#f5f3ff'"
+            fill-style="solid"
+            :roughness="0.9"
+            :stroke-width="1.1"
+            :seed="908"
+            class="metric-box"
+          >
+            <div
+              class="metric-pill coalition"
+              :title="`${coalitionTenantsCount} of ${totalTenants} tenants in coalition (${coalitionPercent}%)`"
+            >
+              <span class="metric-label">In Coalition</span>
+              <div class="metric-value-row">
+                <span class="metric-value">{{ coalitionTenantsCount }}</span>
+                <span class="metric-percent">({{ coalitionPercent }}%)</span>
+              </div>
+            </div>
+          </RoughBox>
+
+          <RoughBox
+            :stroke="'#dc2626'"
+            :fill="'#fee2e2'"
+            fill-style="solid"
+            :roughness="0.9"
+            :stroke-width="1.1"
+            :seed="906"
+            class="metric-box"
+          >
+            <div class="metric-pill evict" :title="`${totalEvictionsCount} total evicted tenants`">
+              <span class="metric-label">Evictions</span>
+              <span class="metric-value">{{ totalEvictionsCount }}</span>
+            </div>
+          </RoughBox>
+        </div>
       </div>
     </div>
 
@@ -528,14 +673,21 @@ const eventSegmentsMap = computed(() => {
 
 .metrics-section {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.metrics-row {
+  display: flex;
   align-items: stretch;
   gap: 6px;
-  flex-wrap: wrap;
+  width: 100%;
 }
 
 .metric-box {
   flex: 1 1 0;
-  min-width: 58px;
+  min-width: 0;
 }
 
 .metric-pill {
@@ -596,6 +748,11 @@ const eventSegmentsMap = computed(() => {
 .metric-pill.coalition .metric-value,
 .metric-pill.coalition .metric-percent {
   color: #6d28d9;
+}
+
+.metric-pill.landlord-funds .metric-value,
+.metric-pill.landlord-funds .money-highlight {
+  color: #78350f;
 }
 
 .tally-table-wrapper {
@@ -889,17 +1046,49 @@ const eventSegmentsMap = computed(() => {
 .event-bullet-item.is-earn .event-text {
   color: #15803d;
 }
+.events-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.events-round-select {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 4px;
+  border: 1px solid #d1c7b7;
+  border-radius: 4px;
+  background-color: #faf7f2;
+  color: #44403c;
+  cursor: pointer;
+  outline: none;
+}
+
+.event-round-tag {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0 4px;
+  margin-right: 5px;
+  border-radius: 3px;
+  background-color: #e2e8f0;
+  color: #475569;
+  vertical-align: middle;
+  line-height: 1.3;
+}
+
+.event-undo-btn,
 .event-remove-btn {
   background: none;
   border: none;
   color: #a8a29e;
   font-size: 0.95rem;
   line-height: 1;
-  padding: 0 4px;
+  padding: 1px 4px;
   margin-left: 6px;
   cursor: pointer;
   border-radius: 3px;
-  opacity: 0.6;
+  opacity: 0.65;
   transition:
     opacity 0.15s,
     color 0.15s,
@@ -907,10 +1096,11 @@ const eventSegmentsMap = computed(() => {
   vertical-align: middle;
 }
 
+.event-undo-btn:hover,
 .event-remove-btn:hover {
   opacity: 1;
-  color: #dc2626;
-  background-color: #fee2e2;
+  color: #b45309;
+  background-color: #fef3c7;
 }
 
 .events-empty-hint {

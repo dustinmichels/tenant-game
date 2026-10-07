@@ -9,9 +9,10 @@ import type {
   GamePhase,
   RoundTally,
   CoalitionConnection,
-  CoalitionGroup,
   GameEvent,
   GameEventType,
+  GameEventAction,
+  CoalitionGroup,
 } from "../types/game";
 import {
   PHASES,
@@ -22,8 +23,6 @@ import {
   getTotalUnionCount,
   getCoalitionUnionCount,
   generateDefaultPositions,
-  generateScatteredPositions,
-  spaceOutNodes,
   computeCoalitionGroups,
   getEffectiveBuildingColorMap,
   calculateOptimalPersonSize,
@@ -61,6 +60,7 @@ function createDefaultState(): GameState {
     personHeight: sizing.personHeight,
     personScale: sizing.personScale,
     isConfigured: false,
+    hasBegun: false,
     buildings: [],
     round: 1,
     phase: 1,
@@ -131,26 +131,26 @@ function generateBuildings(
 
 export function formatSpendEventText(amount: number): string {
   if (amount >= 1_000_000 && amount % 1_000_000 === 0) {
-    return `landlord spends ${amount / 1_000_000}m`;
+    return `Landlord spends ${amount / 1_000_000}m`;
   }
   if (amount >= 1_000 && amount % 1_000 === 0) {
-    return `landlord spends ${amount / 1_000}k`;
+    return `Landlord spends ${amount / 1_000}k`;
   }
-  return `landlord spends $${amount.toLocaleString()}`;
+  return `Landlord spends $${amount.toLocaleString()}`;
 }
 
 export function formatEarnEventText(amount: number): string {
   if (amount >= 1_000_000 && amount % 1_000_000 === 0) {
-    return `landlord earns ${amount / 1_000_000}m`;
+    return `Landlord earns ${amount / 1_000_000}m`;
   }
   if (amount >= 1_000 && amount % 1_000 === 0) {
-    return `landlord earns ${amount / 1_000}k`;
+    return `Landlord earns ${amount / 1_000}k`;
   }
-  return `landlord earns $${amount.toLocaleString()}`;
+  return `Landlord earns $${amount.toLocaleString()}`;
 }
 
 export function formatDiceRollEventText(total: number): string {
-  return `Group rolled ${total}`;
+  return `🎲 Group rolled ${total}`;
 }
 
 export const useGameStore = defineStore(
@@ -166,6 +166,14 @@ export const useGameStore = defineStore(
     const personHeight = ref(initial.personHeight ?? Math.round(BASELINE_PERSON_WIDTH / 0.68));
     const personScale = ref(initial.personScale ?? 1.0);
     const isConfigured = ref(initial.isConfigured);
+    const hasBegun = ref(
+      initial.hasBegun !== undefined
+        ? initial.hasBegun
+        : Boolean(
+            initial.isConfigured &&
+            (initial.round > 1 || (initial.events && initial.events.length > 0)),
+          ),
+    );
     const landlordPosition = ref<{ x: number; y: number }>(
       initial.landlordPosition ?? { x: 82, y: 3 },
     );
@@ -177,16 +185,17 @@ export const useGameStore = defineStore(
     const tallies = ref<Record<number, RoundTally>>(initial.tallies);
     const events = ref<GameEvent[]>(initial.events ?? []);
     const updatedAt = ref(initial.updatedAt);
-    const isEditPosition = ref(true);
+    const canEdit = ref(true);
+    const isEditBuildings = canEdit;
+    const isEditPosition = canEdit;
 
     const {
-      undo: undoEvent,
+      undo: undoEventHistory,
       redo: redoEvent,
       canUndo: canUndoEvent,
       canRedo: canRedoEvent,
       clear: clearEventHistory,
     } = useRefHistory(events, { deep: true, flush: "sync" });
-
     const { undo: undoCoalitionHistory, canUndo: canUndoCoalitionHistory } = useRefHistory(
       coalitionConnections,
       { deep: true, flush: "sync" },
@@ -203,6 +212,7 @@ export const useGameStore = defineStore(
       landlordPosition: landlordPosition.value,
       showLandlord: showLandlord.value,
       isConfigured: isConfigured.value,
+      hasBegun: hasBegun.value,
       buildings: buildings.value,
       coalitionConnections: coalitionConnections.value,
       round: round.value,
@@ -238,6 +248,7 @@ export const useGameStore = defineStore(
       () => buildings.value.filter((b) => isBuildingOrganized(b, coalitions.value)).length,
     );
     const canUndoLandlordSpend = computed(() => landlordMoney.value < landlordStartingMoney.value);
+    const eventsJson = computed(() => JSON.stringify(events.value, null, 2));
 
     function persist() {
       // Managed automatically by pinia-plugin-persistedstate
@@ -250,44 +261,49 @@ export const useGameStore = defineStore(
       // Managed automatically by pinia-plugin-persistedstate
     }
 
-    function syncCurrentRoundTally() {
+    function syncAllRoundTallies() {
       const currentRound = round.value;
-      const existing = tallies.value[currentRound];
       const bldgs = buildings.value;
-
-      const roundEvictions = bldgs.reduce(
-        (sum, b) =>
-          sum +
-          b.tenants.filter((t) => t.isEvicted && (t.evictedRound ?? currentRound) === currentRound)
-            .length,
-        0,
-      );
-
-      const totalEvictions = bldgs.reduce(
-        (sum, b) =>
-          sum +
-          b.tenants.filter((t) => t.isEvicted && (t.evictedRound ?? 1) <= currentRound).length,
-        0,
-      );
-
-      const prevOrganized =
-        currentRound > 1 ? (tallies.value[currentRound - 1]?.totalOrganized ?? 0) : 0;
       const totalOrganized = bldgs.reduce(
         (sum, b) => sum + getBuildingUnionCount(b, coalitions.value),
         0,
       );
-      const currentFunds = landlordMoney.value;
-      tallies.value[currentRound] = {
-        round: currentRound,
-        landlordSpending: existing?.landlordSpending ?? null,
-        landlordRemaining: existing?.landlordRemaining ?? currentFunds,
-        totalOrganized,
-        organizedChange: totalOrganized - prevOrganized,
-        evictions: roundEvictions,
-        totalEvictions,
-        buildingsOrganized: bldgs.filter((b) => isBuildingOrganized(b, coalitions.value)).length,
-      };
+      const bldgsOrganized = bldgs.filter((b) => isBuildingOrganized(b, coalitions.value)).length;
+
+      for (let r = 1; r <= currentRound; r++) {
+        const existing = tallies.value[r];
+        const roundEvictions = bldgs.reduce(
+          (sum, b) =>
+            sum + b.tenants.filter((t) => t.isEvicted && (t.evictedRound ?? r) === r).length,
+          0,
+        );
+        const cumulativeEvictions = bldgs.reduce(
+          (sum, b) =>
+            sum + b.tenants.filter((t) => t.isEvicted && (t.evictedRound ?? 1) <= r).length,
+          0,
+        );
+
+        if (r === currentRound) {
+          const prevOrganized = r > 1 ? (tallies.value[r - 1]?.totalOrganized ?? 0) : 0;
+          const currentFunds = landlordMoney.value;
+          tallies.value[r] = {
+            round: r,
+            landlordSpending: existing?.landlordSpending ?? null,
+            landlordRemaining: existing?.landlordRemaining ?? currentFunds,
+            totalOrganized,
+            organizedChange: totalOrganized - prevOrganized,
+            evictions: roundEvictions,
+            totalEvictions: cumulativeEvictions,
+            buildingsOrganized: bldgsOrganized,
+          };
+        } else if (existing) {
+          existing.evictions = roundEvictions;
+          existing.totalEvictions = cumulativeEvictions;
+        }
+      }
     }
+
+    const syncCurrentRoundTally = syncAllRoundTallies;
 
     function setupGame(
       newBuildingCount: number,
@@ -323,6 +339,8 @@ export const useGameStore = defineStore(
       personHeight.value = sizing.personHeight;
       personScale.value = sizing.personScale;
       isConfigured.value = true;
+      hasBegun.value = false;
+      canEdit.value = true;
       buildings.value = newBuildings;
       round.value = 1;
       phase.value = 1;
@@ -365,13 +383,24 @@ export const useGameStore = defineStore(
           tallies.value[currentRound].landlordRemaining = newFunds;
         }
       }
-      addEvent(formatSpendEventText(amount), "spend");
+      addEvent(formatSpendEventText(amount), "spend", undefined, {
+        type: "spend",
+        amount,
+        round: currentRound,
+      });
 
       updatedAt.value = Date.now();
       persist();
     }
 
     function undoLandlordSpend(amount = 50000) {
+      for (let i = events.value.length - 1; i >= 0; i--) {
+        const ev = events.value[i];
+        if (ev && (ev.type === "spend" || ev.action?.type === "spend")) {
+          undoEvent(ev.id);
+          return;
+        }
+      }
       const currentRound = round.value;
       const startFunds = landlordStartingMoney.value;
       const currentFunds = landlordMoney.value;
@@ -390,12 +419,6 @@ export const useGameStore = defineStore(
           tallies.value[currentRound].landlordSpending = currentSpend > 0 ? currentSpend : null;
           tallies.value[currentRound].landlordRemaining = newFunds;
         }
-      }
-
-      if (canUndoEvent.value) {
-        undoEvent();
-      } else if (Array.isArray(events.value) && events.value.length > 0) {
-        events.value.pop();
       }
 
       updatedAt.value = Date.now();
@@ -422,38 +445,243 @@ export const useGameStore = defineStore(
         }
       }
 
-      addEvent(formatEarnEventText(amount), "earn");
+      addEvent(formatEarnEventText(amount), "earn", undefined, {
+        type: "earn",
+        amount,
+        round: currentRound,
+      });
       updatedAt.value = Date.now();
       persist();
     }
 
-    function addEvent(text: string, type?: GameEventType, buildingId?: string) {
+    function addEvent(
+      text: string,
+      type?: GameEventType,
+      buildingId?: string,
+      action?: GameEventAction,
+    ) {
       const trimmed = text.trim();
       if (!trimmed) return;
       if (!Array.isArray(events.value)) {
         events.value = [];
       }
+      const formattedText = /^landlord\b/i.test(trimmed)
+        ? trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+        : trimmed;
       const resolvedType: GameEventType =
         type ??
-        (isSpendEventText(trimmed) ? "spend" : isEarnEventText(trimmed) ? "earn" : "general");
+        (isSpendEventText(formattedText)
+          ? "spend"
+          : isEarnEventText(formattedText)
+            ? "earn"
+            : "general");
       const newEvent: GameEvent = {
         id: `event-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        text: trimmed,
+        text: formattedText,
         round: round.value,
         timestamp: Date.now(),
         type: resolvedType,
         ...(buildingId ? { buildingId } : {}),
+        ...(action ? { action } : {}),
       };
       events.value.push(newEvent);
       updatedAt.value = Date.now();
       persist();
     }
 
-    function removeEvent(id: string) {
-      if (!Array.isArray(events.value)) return;
-      events.value = events.value.filter((e) => e.id !== id);
+    function undoEvent(id?: string): boolean {
+      if (!Array.isArray(events.value) || events.value.length === 0) return false;
+      const targetId = id ?? events.value[events.value.length - 1]?.id;
+      if (!targetId) return false;
+
+      const eventIndex = events.value.findIndex((e) => e.id === targetId);
+      if (eventIndex === -1) return false;
+      const event = events.value[eventIndex];
+      if (!event) return false;
+
+      const eventRound = event.round ?? round.value;
+      const action = event.action;
+
+      if (action) {
+        switch (action.type) {
+          case "spend": {
+            const amount = action.amount ?? 0;
+            if (amount > 0) {
+              landlordMoney.value += amount;
+              if (tallies.value[eventRound]) {
+                const currentSpend = (tallies.value[eventRound].landlordSpending ?? 0) - amount;
+                tallies.value[eventRound].landlordSpending = currentSpend > 0 ? currentSpend : null;
+              }
+              for (let r = eventRound; r <= round.value; r++) {
+                const tr = tallies.value[r];
+                if (tr) {
+                  tr.landlordRemaining = (tr.landlordRemaining ?? 0) + amount;
+                }
+              }
+            }
+            break;
+          }
+          case "earn": {
+            const amount = action.amount ?? 0;
+            if (amount > 0) {
+              landlordMoney.value = Math.max(0, landlordMoney.value - amount);
+              if (tallies.value[eventRound]) {
+                const currentSpend = (tallies.value[eventRound].landlordSpending ?? 0) + amount;
+                tallies.value[eventRound].landlordSpending = currentSpend > 0 ? currentSpend : null;
+              }
+              for (let r = eventRound; r <= round.value; r++) {
+                const tr = tallies.value[r];
+                if (tr) {
+                  tr.landlordRemaining = Math.max(0, (tr.landlordRemaining ?? 0) - amount);
+                }
+              }
+            }
+            break;
+          }
+          case "joinUnion": {
+            const building = buildings.value.find((b) => b.id === action.buildingId);
+            const tenant = building?.tenants.find((t) => t.id === action.tenantId);
+            if (tenant && !tenant.isInstigator) {
+              tenant.inUnion = false;
+            }
+            break;
+          }
+          case "leaveUnion": {
+            const building = buildings.value.find((b) => b.id === action.buildingId);
+            const tenant = building?.tenants.find((t) => t.id === action.tenantId);
+            if (tenant) {
+              tenant.inUnion = true;
+            }
+            break;
+          }
+          case "evict": {
+            const building = buildings.value.find((b) => b.id === action.buildingId);
+            const tenant = building?.tenants.find((t) => t.id === action.tenantId);
+            if (tenant) {
+              tenant.isEvicted = false;
+              delete tenant.evictedRound;
+            }
+            break;
+          }
+          case "unevict": {
+            const building = buildings.value.find((b) => b.id === action.buildingId);
+            const tenant = building?.tenants.find((t) => t.id === action.tenantId);
+            if (tenant) {
+              tenant.isEvicted = true;
+              tenant.evictedRound = eventRound;
+            }
+            break;
+          }
+          case "connectCoalition": {
+            if (Array.isArray(coalitionConnections.value)) {
+              if (action.connectionId) {
+                coalitionConnections.value = coalitionConnections.value.filter(
+                  (c) => c.id !== action.connectionId,
+                );
+              } else if (action.sourceId && action.targetId) {
+                coalitionConnections.value = coalitionConnections.value.filter(
+                  (c) =>
+                    !(
+                      (c.sourceId === action.sourceId && c.targetId === action.targetId) ||
+                      (c.sourceId === action.targetId && c.targetId === action.sourceId)
+                    ),
+                );
+              }
+            }
+            break;
+          }
+          default:
+            break;
+        }
+      } else {
+        // Fallback for events without action metadata:
+        if (event.type === "spend") {
+          const match = event.text.match(/(\d+(?:\.\d+)?)\s*([km])?/i);
+          if (match && match[1]) {
+            let amt = parseFloat(match[1]);
+            if (match[2]?.toLowerCase() === "k") amt *= 1_000;
+            else if (match[2]?.toLowerCase() === "m") amt *= 1_000_000;
+            if (amt > 0) {
+              landlordMoney.value += amt;
+              if (tallies.value[eventRound]) {
+                const currentSpend = (tallies.value[eventRound].landlordSpending ?? 0) - amt;
+                tallies.value[eventRound].landlordSpending = currentSpend > 0 ? currentSpend : null;
+              }
+              for (let r = eventRound; r <= round.value; r++) {
+                const tr = tallies.value[r];
+                if (tr) {
+                  tr.landlordRemaining = (tr.landlordRemaining ?? 0) + amt;
+                }
+              }
+            }
+          }
+        } else if (event.type === "earn") {
+          const match = event.text.match(/(\d+(?:\.\d+)?)\s*([km])?/i);
+          if (match && match[1]) {
+            let amt = parseFloat(match[1]);
+            if (match[2]?.toLowerCase() === "k") amt *= 1_000;
+            else if (match[2]?.toLowerCase() === "m") amt *= 1_000_000;
+            if (amt > 0) {
+              landlordMoney.value = Math.max(0, landlordMoney.value - amt);
+              if (tallies.value[eventRound]) {
+                const currentSpend = (tallies.value[eventRound].landlordSpending ?? 0) + amt;
+                tallies.value[eventRound].landlordSpending = currentSpend > 0 ? currentSpend : null;
+              }
+              for (let r = eventRound; r <= round.value; r++) {
+                const tr = tallies.value[r];
+                if (tr) {
+                  tr.landlordRemaining = Math.max(0, (tr.landlordRemaining ?? 0) - amt);
+                }
+              }
+            }
+          }
+        } else if (event.text.startsWith("Coalition formed:")) {
+          const names = event.text
+            .replace("Coalition formed:", "")
+            .split("+")
+            .map((s) => s.trim());
+          if (names.length === 2 && names[0] && names[1]) {
+            const b1 = buildings.value.find(
+              (b) => b.label.toLowerCase() === names[0]?.toLowerCase(),
+            );
+            const b2 = buildings.value.find(
+              (b) => b.label.toLowerCase() === names[1]?.toLowerCase(),
+            );
+            if (b1 && b2 && Array.isArray(coalitionConnections.value)) {
+              coalitionConnections.value = coalitionConnections.value.filter(
+                (c) =>
+                  !(
+                    (c.sourceId === b1.id && c.targetId === b2.id) ||
+                    (c.sourceId === b2.id && c.targetId === b1.id)
+                  ),
+              );
+            }
+          }
+        } else if (event.buildingId && event.text.includes("joined tenant union")) {
+          const building = buildings.value.find((b) => b.id === event.buildingId);
+          const tenant = building?.tenants.find((t) => t.inUnion && !t.isInstigator);
+          if (tenant) {
+            tenant.inUnion = false;
+          }
+        } else if (event.buildingId && event.text.includes("evicted")) {
+          const building = buildings.value.find((b) => b.id === event.buildingId);
+          const tenant = building?.tenants.find((t) => t.isEvicted);
+          if (tenant) {
+            tenant.isEvicted = false;
+            delete tenant.evictedRound;
+          }
+        }
+      }
+
+      events.value.splice(eventIndex, 1);
+      syncAllRoundTallies();
       updatedAt.value = Date.now();
       persist();
+      return true;
+    }
+
+    function removeEvent(id: string) {
+      undoEvent(id);
     }
 
     function clearEvents() {
@@ -477,6 +705,8 @@ export const useGameStore = defineStore(
       personHeight.value = def.personHeight!;
       personScale.value = def.personScale!;
       isConfigured.value = false;
+      hasBegun.value = false;
+      canEdit.value = true;
       buildings.value = [];
       coalitionConnections.value = [];
       round.value = 1;
@@ -501,7 +731,6 @@ export const useGameStore = defineStore(
         syncCurrentRoundTally();
         phase.value = 1;
         round.value += 1;
-        events.value = [];
         const newRound = round.value;
         if (!tallies.value[newRound]) {
           syncCurrentRoundTally();
@@ -548,7 +777,12 @@ export const useGameStore = defineStore(
 
       const isNowInUnion = Boolean(tenant.inUnion || tenant.isInstigator);
       if (!wasInUnion && isNowInUnion) {
-        addEvent(`Resident in ${building.label} joined tenant union`, "general", building.id);
+        addEvent(`Resident in ${building.label} joined tenant union`, "general", building.id, {
+          type: "joinUnion",
+          buildingId: building.id,
+          tenantId: tenant.id,
+          round: round.value,
+        });
       }
 
       syncCurrentRoundTally();
@@ -572,7 +806,12 @@ export const useGameStore = defineStore(
       }
 
       if (!wasEvicted && newEvicted) {
-        addEvent(`Resident in ${building.label} evicted`, "general", building.id);
+        addEvent(`Resident in ${building.label} evicted`, "general", building.id, {
+          type: "evict",
+          buildingId: building.id,
+          tenantId: tenant.id,
+          round: round.value,
+        });
       }
 
       syncCurrentRoundTally();
@@ -620,6 +859,19 @@ export const useGameStore = defineStore(
     function setShowLandlord(val: boolean) {
       if (showLandlord.value === val) return;
       showLandlord.value = val;
+      updatedAt.value = Date.now();
+      persist();
+    }
+
+    function beginGame() {
+      canEdit.value = false;
+      hasBegun.value = true;
+      updatedAt.value = Date.now();
+      persist();
+    }
+
+    function setHasBegun(val: boolean) {
+      hasBegun.value = val;
       updatedAt.value = Date.now();
       persist();
     }
@@ -775,66 +1027,6 @@ export const useGameStore = defineStore(
       persist();
     }
 
-    function shufflePositions() {
-      const count = buildings.value.length;
-      if (count === 0) return;
-
-      const maxTenants = Math.max(...buildings.value.map((building) => building.tenants.length), 1);
-      let canvasW = 1050;
-      let canvasH = 750;
-      if (typeof window !== "undefined" && window.innerWidth > 0 && window.innerHeight > 0) {
-        canvasW = Math.max(800, window.innerWidth * 0.72);
-        canvasH = Math.max(600, window.innerHeight - 65);
-      }
-      const newPositions = generateScatteredPositions(count, maxTenants, canvasW, canvasH);
-      buildings.value.forEach((b, idx) => {
-        const pos = newPositions[idx];
-        if (pos) {
-          b.x = pos.x;
-          b.y = pos.y;
-        }
-      });
-      updatedAt.value = Date.now();
-      persist();
-    }
-    function spaceOutPositions() {
-      if (buildings.value.length === 0) return;
-      const nodes: Array<{ id: string; x: number; y: number }> = buildings.value.map((b) => ({
-        id: b.id,
-        x: b.x,
-        y: b.y,
-      }));
-      if (showLandlord.value) {
-        nodes.push({
-          id: "landlord",
-          x: landlordPosition.value.x,
-          y: landlordPosition.value.y,
-        });
-      }
-
-      const newPositions = spaceOutNodes(nodes);
-      buildings.value.forEach((b) => {
-        const pos = newPositions.find((p) => p.id === b.id);
-        if (pos) {
-          b.x = pos.x;
-          b.y = pos.y;
-        }
-      });
-
-      if (showLandlord.value) {
-        const llPos = newPositions.find((p) => p.id === "landlord");
-        if (llPos) {
-          landlordPosition.value = {
-            x: Math.round(Math.max(1, Math.min(86, llPos.x)) * 10) / 10,
-            y: Math.round(Math.max(1, Math.min(74, llPos.y)) * 10) / 10,
-          };
-        }
-      }
-
-      updatedAt.value = Date.now();
-      persist();
-    }
-
     function connectCoalition(sourceId: string, targetId: string): boolean {
       if (!sourceId || !targetId || sourceId === targetId) return false;
       const bldgs = buildings.value;
@@ -853,13 +1045,25 @@ export const useGameStore = defineStore(
       );
       if (existingIndex !== -1) return false;
 
+      const connectionId = `coalition-${sourceId}-${targetId}-${Date.now()}`;
       coalitionConnections.value.push({
-        id: `coalition-${sourceId}-${targetId}-${Date.now()}`,
+        id: connectionId,
         sourceId,
         targetId,
         createdAt: Date.now(),
       });
-      addEvent(`Coalition formed: ${sourceBuilding.label} + ${targetBuilding.label}`, "general");
+      addEvent(
+        `Coalition formed: ${sourceBuilding.label} + ${targetBuilding.label}`,
+        "general",
+        undefined,
+        {
+          type: "connectCoalition",
+          connectionId,
+          sourceId,
+          targetId,
+          round: round.value,
+        },
+      );
       syncCurrentRoundTally();
       updatedAt.value = Date.now();
       persist();
@@ -938,6 +1142,7 @@ export const useGameStore = defineStore(
       personHeight,
       personScale,
       isConfigured,
+      hasBegun,
       buildings,
       coalitionConnections,
       round,
@@ -945,6 +1150,8 @@ export const useGameStore = defineStore(
       tallies,
       events,
       updatedAt,
+      canEdit,
+      isEditBuildings,
       isEditPosition,
       landlordPosition,
       showLandlord,
@@ -962,7 +1169,7 @@ export const useGameStore = defineStore(
       buildingColorMap,
       canUndoCoalition,
       coalitionTenantsCount,
-
+      eventsJson,
       // Actions
       persist,
       reloadFromStorage,
@@ -971,6 +1178,8 @@ export const useGameStore = defineStore(
       setShowLandlord,
       syncCurrentRoundTally,
       setupGame,
+      beginGame,
+      setHasBegun,
       spendLandlordMoney,
       undoLandlordSpend,
       earnLandlordMoney,
@@ -991,8 +1200,6 @@ export const useGameStore = defineStore(
       adjustBuildingTenants,
       updateBuilding,
       reorderBuildings,
-      shufflePositions,
-      spaceOutPositions,
       connectCoalition,
       disconnectCoalition,
       disconnectPair,
@@ -1002,6 +1209,7 @@ export const useGameStore = defineStore(
       redoEvent,
       canUndoEvent,
       canRedoEvent,
+      syncAllRoundTallies,
     };
   },
   {

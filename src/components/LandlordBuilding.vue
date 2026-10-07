@@ -10,10 +10,12 @@ const props = withDefaults(
   defineProps<{
     landlordMoney?: number;
     canMove?: boolean;
+    editBuildings?: boolean;
   }>(),
   {
     landlordMoney: 0,
     canMove: true,
+    editBuildings: undefined,
   },
 );
 
@@ -21,360 +23,34 @@ const emit = defineEmits<{
   (e: "pointerdown-drag", event: PointerEvent): void;
 }>();
 
+const isEditable = computed(() =>
+  props.editBuildings !== undefined ? props.editBuildings : props.canMove,
+);
+
 function handleDragPointerDown(e: PointerEvent) {
-  if (!props.canMove) return;
+  if (!isEditable.value) return;
   if (e.button !== 0) return;
   emit("pointerdown-drag", e);
 }
 
-// 1. Skyscraper Architectural Crown & Communications Mast
-const roofCrownPaths = computed<PathInfo[]>(() => {
-  const paths: PathInfo[] = [];
-
-  // Stepped corporate crown cornice
-  // Main stepped corporate crown parapet
-  const parapet = roughGen.rectangle(6, 12, 128, 9, {
-    roughness: 0.45,
-    stroke: "#1e293b",
-    fill: "#0284c7",
-    fillStyle: "solid",
-    strokeWidth: 1.1,
+// Streamlined minimal rooftop trim matching the game's hand-drawn style
+const roofPaths = computed<PathInfo[]>(() => {
+  const cornice = roughGen.line(0, 8, 140, 8, {
+    roughness: 0.5,
+    stroke: "#0369a1",
+    strokeWidth: 1.2,
     seed: 801,
   });
-  paths.push(...roughGen.toPaths(parapet));
-
-  // Angled glass crown facet trims
-  const leftFacet = roughGen.line(10, 12, 26, 6, {
+  const parapetCap = roughGen.line(0, 3, 140, 3, {
     roughness: 0.4,
-    stroke: "#38bdf8",
-    strokeWidth: 1.2,
+    stroke: "#0284c7",
+    strokeWidth: 1.0,
     seed: 802,
   });
-  const rightFacet = roughGen.line(130, 12, 114, 6, {
-    roughness: 0.4,
-    stroke: "#38bdf8",
-    strokeWidth: 1.2,
-    seed: 803,
-  });
-  const centerCrownTrim = roughGen.line(26, 6, 114, 6, {
-    roughness: 0.35,
-    stroke: "#0f172a",
-    strokeWidth: 1.1,
-    seed: 804,
-  });
-  paths.push(
-    ...roughGen.toPaths(leftFacet),
-    ...roughGen.toPaths(rightFacet),
-    ...roughGen.toPaths(centerCrownTrim),
-  );
-
-  // Left communications mast & beacon
-  const leftMast = roughGen.line(18, 12, 18, 2, {
-    roughness: 0.3,
-    stroke: "#0f172a",
-    strokeWidth: 1.4,
-    seed: 805,
-  });
-  const leftCross = roughGen.line(14, 6, 22, 6, {
-    roughness: 0.25,
-    stroke: "#334155",
-    strokeWidth: 1.0,
-    seed: 806,
-  });
-  const leftBeacon = roughGen.circle(18, 2.5, 3.2, {
-    roughness: 0.25,
-    stroke: "#991b1b",
-    fill: "#ef4444",
-    fillStyle: "solid",
-    strokeWidth: 0.8,
-    seed: 807,
-  });
-  paths.push(
-    ...roughGen.toPaths(leftMast),
-    ...roughGen.toPaths(leftCross),
-    ...roughGen.toPaths(leftBeacon),
-  );
-
-  // Right communications mast & beacon
-  const rightMast = roughGen.line(122, 12, 122, 2, {
-    roughness: 0.3,
-    stroke: "#0f172a",
-    strokeWidth: 1.4,
-    seed: 808,
-  });
-  const rightCross = roughGen.line(118, 6, 126, 6, {
-    roughness: 0.25,
-    stroke: "#334155",
-    strokeWidth: 1.0,
-    seed: 809,
-  });
-  const rightBeacon = roughGen.circle(122, 2.5, 3.2, {
-    roughness: 0.25,
-    stroke: "#991b1b",
-    fill: "#ef4444",
-    fillStyle: "solid",
-    strokeWidth: 0.8,
-    seed: 810,
-  });
-  paths.push(
-    ...roughGen.toPaths(rightMast),
-    ...roughGen.toPaths(rightCross),
-    ...roughGen.toPaths(rightBeacon),
-  );
-
-  return paths;
+  return [cornice, parapetCap].flatMap((d) => roughGen.toPaths(d));
 });
 
-// 2. Penthouse Panoramic Glass Window Frame
-const penthouseWindowPaths = computed<PathInfo[]>(() => {
-  const paths: PathInfo[] = [];
-
-  // Panoramic outer window frame
-  const outerFrame = roughGen.rectangle(2, 2, 76, 54, {
-    roughness: 0.5,
-    stroke: "#0f172a",
-    fill: "#f0f9ff",
-    fillStyle: "solid",
-    strokeWidth: 1.1,
-    seed: 810,
-  });
-  paths.push(...roughGen.toPaths(outerFrame));
-
-  // Vertical structural mullions
-  const leftMullion = roughGen.line(26, 2, 26, 56, {
-    roughness: 0.4,
-    stroke: "#0369a1",
-    strokeWidth: 1.0,
-    seed: 811,
-  });
-  const rightMullion = roughGen.line(54, 2, 54, 56, {
-    roughness: 0.4,
-    stroke: "#0369a1",
-    strokeWidth: 1.0,
-    seed: 812,
-  });
-  // Top transom bar
-  const transom = roughGen.line(2, 13, 78, 13, {
-    roughness: 0.4,
-    stroke: "#0369a1",
-    strokeWidth: 0.9,
-    seed: 813,
-  });
-  // Heavy floor sill
-  const sill = roughGen.line(0, 56, 80, 56, {
-    roughness: 0.4,
-    stroke: "#0f172a",
-    strokeWidth: 1.3,
-    seed: 814,
-  });
-  // Diagonal glass reflection streak
-  const glint = roughGen.line(10, 50, 42, 6, {
-    roughness: 0.45,
-    stroke: "#38bdf8",
-    strokeWidth: 1.2,
-    seed: 815,
-  });
-
-  paths.push(
-    ...roughGen.toPaths(leftMullion),
-    ...roughGen.toPaths(rightMullion),
-    ...roughGen.toPaths(transom),
-    ...roughGen.toPaths(sill),
-    ...roughGen.toPaths(glint),
-  );
-
-  return paths;
-});
-
-// 3. Multi-Floor Glass Curtain Wall Facade
-const curtainWallPaths = computed<PathInfo[]>(() => {
-  const paths: PathInfo[] = [];
-
-  // Outer curtain wall framing
-  const wallBox = roughGen.rectangle(1, 1, 126, 64, {
-    roughness: 0.45,
-    stroke: "#0f172a",
-    fill: "#0f172a",
-    fillStyle: "solid",
-    strokeWidth: 1.2,
-    seed: 820,
-  });
-  paths.push(...roughGen.toPaths(wallBox));
-
-  // 3 floors x 4 columns of tinted glass panels
-  const glassColors = [
-    ["#0ea5e9", "#38bdf8", "#0284c7", "#0369a1"],
-    ["#0284c7", "#7dd3fc", "#0ea5e9", "#38bdf8"],
-    ["#0369a1", "#0ea5e9", "#38bdf8", "#0284c7"],
-  ];
-
-  const colX = [3, 34, 65, 96];
-  const rowY = [3, 24, 45];
-  const paneW = 28;
-  const paneH = 17;
-
-  let paneSeed = 830;
-  for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 4; c++) {
-      const fill = glassColors[r]![c]!;
-      const pane = roughGen.rectangle(colX[c]!, rowY[r]!, paneW, paneH, {
-        roughness: 0.4,
-        stroke: "#0369a1",
-        fill,
-        fillStyle: "solid",
-        strokeWidth: 0.7,
-        seed: paneSeed++,
-      });
-      paths.push(...roughGen.toPaths(pane));
-    }
-  }
-
-  // Horizontal floor spandrel beams
-  const spandrel1 = roughGen.line(2, 22, 126, 22, {
-    roughness: 0.35,
-    stroke: "#0f172a",
-    strokeWidth: 1.2,
-    seed: 860,
-  });
-  const spandrel2 = roughGen.line(2, 43, 126, 43, {
-    roughness: 0.35,
-    stroke: "#0f172a",
-    strokeWidth: 1.2,
-    seed: 861,
-  });
-
-  // Vertical structural mullion lines
-  const mullion1 = roughGen.line(33, 2, 33, 64, {
-    roughness: 0.35,
-    stroke: "#0f172a",
-    strokeWidth: 1.1,
-    seed: 862,
-  });
-  const mullion2 = roughGen.line(64, 2, 64, 64, {
-    roughness: 0.35,
-    stroke: "#0f172a",
-    strokeWidth: 1.1,
-    seed: 863,
-  });
-  const mullion3 = roughGen.line(95, 2, 95, 64, {
-    roughness: 0.35,
-    stroke: "#0f172a",
-    strokeWidth: 1.1,
-    seed: 864,
-  });
-
-  // Dramatic diagonal architectural reflection streaks across the facade
-  const glint1 = roughGen.line(8, 60, 52, 4, {
-    roughness: 0.4,
-    stroke: "#ffffff",
-    strokeWidth: 1.6,
-    seed: 870,
-  });
-  const glint2 = roughGen.line(44, 62, 90, 6, {
-    roughness: 0.4,
-    stroke: "#bae6fd",
-    strokeWidth: 1.4,
-    seed: 871,
-  });
-  const glint3 = roughGen.line(82, 60, 122, 8, {
-    roughness: 0.4,
-    stroke: "#ffffff",
-    strokeWidth: 1.5,
-    seed: 872,
-  });
-
-  paths.push(
-    ...roughGen.toPaths(spandrel1),
-    ...roughGen.toPaths(spandrel2),
-    ...roughGen.toPaths(mullion1),
-    ...roughGen.toPaths(mullion2),
-    ...roughGen.toPaths(mullion3),
-    ...roughGen.toPaths(glint1),
-    ...roughGen.toPaths(glint2),
-    ...roughGen.toPaths(glint3),
-  );
-
-  return paths;
-});
-
-// 4. Ground-Floor Grand Glass Lobby & Revolving Door
-const entranceLobbyPaths = computed<PathInfo[]>(() => {
-  const paths: PathInfo[] = [];
-
-  // Lobby structural frame
-  const lobbyFrame = roughGen.rectangle(3, 3, 122, 21, {
-    roughness: 0.45,
-    stroke: "#0f172a",
-    fill: "#0c4a6e",
-    fillStyle: "solid",
-    strokeWidth: 1.1,
-    seed: 880,
-  });
-  paths.push(...roughGen.toPaths(lobbyFrame));
-
-  // Glass entrance canopy
-  const canopy = roughGen.line(8, 2, 120, 2, {
-    roughness: 0.3,
-    stroke: "#38bdf8",
-    strokeWidth: 1.8,
-    seed: 881,
-  });
-  paths.push(...roughGen.toPaths(canopy));
-
-  // Left glass wall panel
-  const leftGlass = roughGen.rectangle(6, 4, 38, 18, {
-    roughness: 0.4,
-    stroke: "#0284c7",
-    fill: "#0369a1",
-    fillStyle: "solid",
-    strokeWidth: 0.8,
-    seed: 882,
-  });
-  // Right glass wall panel
-  const rightGlass = roughGen.rectangle(84, 4, 38, 18, {
-    roughness: 0.4,
-    stroke: "#0284c7",
-    fill: "#0369a1",
-    fillStyle: "solid",
-    strokeWidth: 0.8,
-    seed: 883,
-  });
-
-  // Central revolving door cylinder
-  const drum = roughGen.circle(64, 13, 17, {
-    roughness: 0.4,
-    stroke: "#0f172a",
-    fill: "#e0f2fe",
-    fillStyle: "solid",
-    strokeWidth: 1.0,
-    seed: 884,
-  });
-  // Revolving door wings
-  const vWing = roughGen.line(64, 5, 64, 21, {
-    roughness: 0.3,
-    stroke: "#0369a1",
-    strokeWidth: 1.2,
-    seed: 885,
-  });
-  const hWing = roughGen.line(56, 13, 72, 13, {
-    roughness: 0.3,
-    stroke: "#0369a1",
-    strokeWidth: 1.2,
-    seed: 886,
-  });
-
-  paths.push(
-    ...roughGen.toPaths(leftGlass),
-    ...roughGen.toPaths(rightGlass),
-    ...roughGen.toPaths(drum),
-    ...roughGen.toPaths(vWing),
-    ...roughGen.toPaths(hWing),
-  );
-
-  return paths;
-});
-
-// 5. Landlord Figure (in suit with red tie) inside Penthouse
+// Hand-drawn landlord figure (in suit with red tie)
 const landlordFigurePaths = computed<PathInfo[]>(() => {
   const paths: PathInfo[] = [];
 
@@ -478,22 +154,21 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
 </script>
 
 <template>
-  <div
-    class="landlord-office-wrapper glass-skyscraper-card"
-    title="Landlord, Inc. Corporate Headquarters"
-  >
-    <!-- Reposition handle (identical to residential buildings) -->
-    <button
-      v-if="canMove"
-      type="button"
-      class="building-drag-handle"
-      title="Drag to move Landlord, Inc."
-      aria-label="Drag to move Landlord, Inc."
-      @pointerdown.stop.prevent="handleDragPointerDown"
-    >
-      <GripVertical :size="14" :stroke-width="1.5" class="drag-icon" aria-hidden="true" />
-      <span class="drag-label">Move</span>
-    </button>
+  <div class="landlord-office-wrapper glass-skyscraper-card" title="Landlord, Inc.">
+    <!-- Reposition handle (only in edit mode) -->
+    <transition name="edit-control-pop">
+      <button
+        v-if="isEditable"
+        type="button"
+        class="building-drag-handle"
+        title="Drag to move Landlord, Inc."
+        aria-label="Drag to move Landlord, Inc."
+        @pointerdown.stop.prevent="handleDragPointerDown"
+      >
+        <GripVertical :size="14" :stroke-width="1.5" class="drag-icon" aria-hidden="true" />
+        <span class="drag-label">Move</span>
+      </button>
+    </transition>
 
     <RoughBox
       :stroke="'#0369a1'"
@@ -503,19 +178,19 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
       :bowing="0.3"
       :stroke-width="1.6"
       :seed="800"
-      class="office-rough-box skyscraper-box"
+      class="office-rough-box"
     >
       <div class="office-inner">
-        <!-- 1. Skyscraper Architectural Crown with Mast & Warning Beacon -->
+        <!-- Rooftop trim (draggable) -->
         <div
-          class="roof-area skyscraper-crown-area"
-          :class="{ 'is-draggable': canMove }"
-          :title="canMove ? 'Drag to move building' : undefined"
+          class="roof-area"
+          :class="{ 'is-draggable': isEditable }"
+          :title="isEditable ? 'Drag to move Landlord, Inc.' : undefined"
           @pointerdown="handleDragPointerDown"
         >
-          <svg viewBox="0 0 140 22" class="crown-svg" preserveAspectRatio="none" aria-hidden="true">
+          <svg viewBox="0 0 140 10" class="roof-svg" preserveAspectRatio="none" aria-hidden="true">
             <path
-              v-for="(p, idx) in roofCrownPaths"
+              v-for="(p, idx) in roofPaths"
               :key="idx"
               :d="p.d"
               :stroke="p.stroke"
@@ -523,11 +198,9 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
               :fill="p.fill || 'none'"
             />
           </svg>
-          <div class="beacon-glow beacon-left" aria-hidden="true" />
-          <div class="beacon-glow beacon-right" aria-hidden="true" />
         </div>
 
-        <!-- 2. Corporate Plaque / Signboard -->
+        <!-- Corporate Plaque / Signboard -->
         <div class="header-plaque-area">
           <RoughBox
             :stroke="'#0284c7'"
@@ -545,12 +218,17 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
           </RoughBox>
         </div>
 
-        <!-- 3. Penthouse Suite: Panoramic Executive Corner Office -->
-        <div class="executive-suite penthouse-suite">
-          <div class="office-window penthouse-window">
-            <svg viewBox="0 0 80 58" class="window-frame-svg" aria-hidden="true">
+        <!-- Landlord Office: Figure & Funds Ticker -->
+        <div
+          class="landlord-body-area"
+          :class="{ 'is-draggable': isEditable }"
+          :title="isEditable ? 'Drag to move Landlord, Inc.' : undefined"
+          @pointerdown="handleDragPointerDown"
+        >
+          <div class="landlord-figure-container" title="The Landlord">
+            <svg viewBox="0 0 56 64" class="landlord-svg" role="img" aria-label="The Landlord">
               <path
-                v-for="(p, idx) in penthouseWindowPaths"
+                v-for="(p, idx) in landlordFigurePaths"
                 :key="idx"
                 :d="p.d"
                 :stroke="p.stroke"
@@ -558,25 +236,6 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
                 :fill="p.fill || 'none'"
               />
             </svg>
-
-            <!-- Warm interior ambient light inside executive office -->
-            <div class="penthouse-interior-glow" aria-hidden="true" />
-
-            <div
-              class="landlord-figure-container"
-              title="The Landlord • Executive Penthouse Office"
-            >
-              <svg viewBox="0 0 56 64" class="landlord-svg" role="img" aria-label="The Landlord">
-                <path
-                  v-for="(p, idx) in landlordFigurePaths"
-                  :key="idx"
-                  :d="p.d"
-                  :stroke="p.stroke"
-                  :stroke-width="p.strokeWidth"
-                  :fill="p.fill || 'none'"
-                />
-              </svg>
-            </div>
           </div>
 
           <!-- Digital Executive Funds Ticker -->
@@ -589,51 +248,6 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
             <span class="funds-amount">{{ formatCompactCurrency(landlordMoney) }}</span>
           </span>
         </div>
-
-        <!-- 4. Glass Curtain Wall Tower Facade -->
-        <div
-          class="curtain-wall-area"
-          :class="{ 'is-draggable': canMove }"
-          :title="canMove ? 'Drag to move building' : undefined"
-          @pointerdown="handleDragPointerDown"
-        >
-          <svg
-            viewBox="0 0 128 66"
-            class="curtain-wall-svg"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            <path
-              v-for="(p, idx) in curtainWallPaths"
-              :key="idx"
-              :d="p.d"
-              :stroke="p.stroke"
-              :stroke-width="p.strokeWidth"
-              :fill="p.fill || 'none'"
-            />
-          </svg>
-          <!-- Specular glass reflection sheen -->
-          <div class="glass-reflection-streak" aria-hidden="true" />
-        </div>
-
-        <!-- 5. Grand Glass Entrance Lobby & Revolving Door -->
-        <div
-          class="ground-area lobby-area"
-          :class="{ 'is-draggable': canMove }"
-          :title="canMove ? 'Drag to move building' : undefined"
-          @pointerdown="handleDragPointerDown"
-        >
-          <svg viewBox="0 0 128 26" class="lobby-svg" preserveAspectRatio="none" aria-hidden="true">
-            <path
-              v-for="(p, idx) in entranceLobbyPaths"
-              :key="idx"
-              :d="p.d"
-              :stroke="p.stroke"
-              :stroke-width="p.strokeWidth"
-              :fill="p.fill || 'none'"
-            />
-          </svg>
-        </div>
       </div>
     </RoughBox>
   </div>
@@ -642,25 +256,21 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
 <style scoped>
 .landlord-office-wrapper {
   position: relative;
-  width: 142px;
+  width: 144px;
   padding-top: 14px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   user-select: none;
   touch-action: none;
-  filter: drop-shadow(0 4px 12px rgba(15, 23, 42, 0.16));
-  transition:
-    transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
-    filter 0.2s ease;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .landlord-office-wrapper:hover {
   transform: translateY(-2px);
-  filter: drop-shadow(0 6px 16px rgba(2, 132, 199, 0.28));
 }
 
-/* Drag indicator handle on top of skyscraper */
+/* Drag indicator handle on top */
 .building-drag-handle {
   position: absolute;
   top: 0px;
@@ -691,7 +301,30 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
     box-shadow 0.15s ease;
 }
 
-.skyscraper-box {
+.building-drag-handle:hover {
+  background-color: #e0f2fe;
+  border-color: #0284c7;
+  color: #0369a1;
+  transform: translateX(-50%) translateY(-1px) scale(1.06);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
+}
+
+.building-drag-handle:active {
+  cursor: grabbing;
+  transform: translateX(-50%) translateY(0) scale(0.98);
+}
+
+.drag-icon {
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+.drag-label {
+  line-height: 1.2;
+}
+
+.office-rough-box {
   width: 100%;
   height: 100%;
 }
@@ -701,74 +334,39 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
   flex-direction: column;
   align-items: center;
   width: 100%;
-  padding-bottom: 3px;
-  background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 30%, #bae6fd 100%);
+  padding-bottom: 8px;
+  background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 35%, #bae6fd 100%);
   border-radius: 4px;
   overflow: hidden;
 }
 
-/* 1. Crown Area */
-.skyscraper-crown-area {
+/* 1. Rooftop Trim */
+.roof-area {
   position: relative;
   width: 100%;
-  height: 22px;
+  height: 10px;
   cursor: default;
+  touch-action: none;
 }
 
-.skyscraper-crown-area.is-draggable {
+.roof-area.is-draggable {
   cursor: grab;
 }
 
-.skyscraper-crown-area.is-draggable:active {
+.roof-area.is-draggable:active {
   cursor: grabbing;
 }
 
-.crown-svg {
+.roof-svg {
   width: 100%;
   height: 100%;
   display: block;
 }
 
-/* Pulsing aircraft warning beacon on the mast peak */
-.beacon-glow {
-  position: absolute;
-  top: 1px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background-color: #ef4444;
-  box-shadow: 0 0 6px #ef4444;
-  animation: beacon-blink 2s ease-in-out infinite;
-  pointer-events: none;
-}
-
-.beacon-left {
-  left: 12.5%;
-}
-
-.beacon-right {
-  left: 86.5%;
-}
-
-@keyframes beacon-blink {
-  0%,
-  100% {
-    opacity: 0.4;
-    transform: translateX(-50%) scale(0.85);
-  }
-  50% {
-    opacity: 1;
-    transform: translateX(-50%) scale(1.25);
-    box-shadow:
-      0 0 8px #ef4444,
-      0 0 14px rgba(239, 68, 68, 0.6);
-  }
-}
-
 /* 2. Corporate Plaque Signboard */
 .header-plaque-area {
   width: 92%;
-  padding: 1px 0 3px;
+  padding: 1px 0 4px;
 }
 
 .plaque-box {
@@ -787,6 +385,7 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
 .corp-icon {
   font-size: 11px;
   line-height: 1;
+  color: #f8fafc;
 }
 
 .corp-title {
@@ -799,50 +398,30 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
   white-space: nowrap;
 }
 
-/* 3. Penthouse Suite */
-.penthouse-suite {
+/* 3. Landlord Office Body Area */
+.landlord-body-area {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 2px 0 4px;
+  gap: 6px;
+  padding: 10px 4px 6px;
   width: 100%;
+  cursor: default;
+  touch-action: none;
 }
 
-.penthouse-window {
-  position: relative;
-  width: 76px;
-  height: 58px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 2px;
-  overflow: hidden;
-  border-radius: 2px;
+.landlord-body-area.is-draggable {
+  cursor: grab;
 }
 
-.penthouse-interior-glow {
-  position: absolute;
-  inset: 2px;
-  background: radial-gradient(circle at 50% 40%, #fef3c7 0%, #fde68a 60%, #bae6fd 100%);
-  opacity: 0.85;
-  pointer-events: none;
-}
-
-.window-frame-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 1;
+.landlord-body-area.is-draggable:active {
+  cursor: grabbing;
 }
 
 .landlord-figure-container {
   position: relative;
-  z-index: 2;
-  width: 44px;
-  height: 48px;
+  width: 48px;
+  height: 54px;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -850,14 +429,14 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
 }
 
 .landlord-figure-container:hover {
-  transform: scale(1.06);
+  transform: scale(1.05);
 }
 
 .landlord-svg {
   width: 100%;
   height: 100%;
   display: block;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.22));
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.15));
 }
 
 .landlord-building-funds {
@@ -870,9 +449,8 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
   background: #f0f9ff;
   border: 1px solid #bae6fd;
   box-shadow: 0 1px 3px rgba(3, 105, 161, 0.12);
-  padding: 1px 6px;
+  padding: 1.5px 7px;
   border-radius: 10px;
-  margin-top: 1px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -885,67 +463,17 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
   letter-spacing: 0.02em;
 }
 
-/* 4. Glass Curtain Wall Tower Facade */
-.curtain-wall-area {
-  position: relative;
-  width: 93%;
-  height: 66px;
-  margin: 2px 0;
-  cursor: default;
-  overflow: hidden;
-  border-radius: 2px;
+/* Edit mode controls pop animation */
+.edit-control-pop-enter-active,
+.edit-control-pop-leave-active {
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.curtain-wall-area.is-draggable {
-  cursor: grab;
-}
-
-.curtain-wall-area.is-draggable:active {
-  cursor: grabbing;
-}
-
-.curtain-wall-svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* Glass reflection gleam across curtain wall */
-.glass-reflection-streak {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    125deg,
-    rgba(255, 255, 255, 0.45) 0%,
-    rgba(255, 255, 255, 0.02) 36%,
-    rgba(255, 255, 255, 0.22) 52%,
-    transparent 100%
-  );
-  pointer-events: none;
-}
-
-/* 5. Lobby Area */
-.lobby-area {
-  width: 93%;
-  height: 26px;
-  cursor: default;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  margin-top: 2px;
-}
-
-.lobby-area.is-draggable {
-  cursor: grab;
-}
-
-.lobby-area.is-draggable:active {
-  cursor: grabbing;
-}
-
-.lobby-svg {
-  width: 100%;
-  height: 100%;
-  display: block;
+.building-drag-handle.edit-control-pop-enter-from,
+.building-drag-handle.edit-control-pop-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) scale(0.4);
 }
 </style>

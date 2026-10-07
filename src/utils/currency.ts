@@ -1,5 +1,4 @@
 export const DEFAULT_LANDLORD_MONEY_PER_PLAYER = 100_000;
-export const DEFAULT_LANDLORD_MONEY_PER_TENANT = DEFAULT_LANDLORD_MONEY_PER_PLAYER;
 
 /**
  * Calculates default landlord starting money based on total players/tenants

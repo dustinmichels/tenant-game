@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { setActivePinia, createPinia } from "pinia";
-import type { Building, CoalitionConnection } from "../../types/game";
+import type { Building, CoalitionConnection, Tenant } from "../../types/game";
 import {
   computeCoalitionGroups,
   getBuildingUnionCount,
@@ -146,7 +146,7 @@ describe("game store coalitionTenantsCount integration", () => {
     expect(store.coalitionTenantsCount).toBe(0);
 
     // Add a second person to b1's union
-    const b1T2 = b1.tenants.find((t) => !t.inUnion && !t.isInstigator)!;
+    const b1T2 = b1.tenants.find((t: Tenant) => !t.inUnion && !t.isInstigator)!;
     store.toggleUnion(b1.id, b1T2.id, true);
 
     // b1 now has 2 in union -> unionTenantsCount = 2, coalitionTenantsCount = 0
@@ -154,7 +154,7 @@ describe("game store coalitionTenantsCount integration", () => {
     expect(store.coalitionTenantsCount).toBe(0);
 
     // Add a second person to b2's union
-    const b2T2 = b2.tenants.find((t) => !t.inUnion && !t.isInstigator)!;
+    const b2T2 = b2.tenants.find((t: Tenant) => !t.inUnion && !t.isInstigator)!;
     store.toggleUnion(b2.id, b2T2.id, true);
 
     // b2 now has 2 in union -> unionTenantsCount = 4, coalitionTenantsCount = 0
@@ -169,7 +169,7 @@ describe("game store coalitionTenantsCount integration", () => {
     expect(store.coalitionTenantsCount).toBe(4);
 
     // Add 2 people to b3 (standalone building)
-    const b3T2 = b3.tenants.find((t) => !t.inUnion && !t.isInstigator)!;
+    const b3T2 = b3.tenants.find((t: Tenant) => !t.inUnion && !t.isInstigator)!;
     store.toggleUnion(b3.id, b3T2.id, true);
 
     // Total in union = 6 (b1: 2, b2: 2, b3: 2)

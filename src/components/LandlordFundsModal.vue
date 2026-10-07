@@ -84,7 +84,11 @@ function handleCustomEarn() {
 function handleEnterKey(e: KeyboardEvent) {
   if (isCustomValid.value) {
     e.preventDefault();
-    handleCustomSpend();
+    if (customAmountInput.value.trim().startsWith("+")) {
+      handleCustomEarn();
+    } else {
+      handleCustomSpend();
+    }
   }
 }
 </script>
@@ -273,10 +277,6 @@ function handleEnterKey(e: KeyboardEvent) {
   z-index: 9998;
   background-color: rgba(28, 25, 23, 0.45);
   backdrop-filter: blur(2px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
   animation: fade-in 0.15s ease-out;
 }
 
@@ -290,19 +290,27 @@ function handleEnterKey(e: KeyboardEvent) {
 }
 
 .modal-dialog {
-  width: 100%;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  width: calc(100% - 32px);
   max-width: 440px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
   filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.25));
   animation: scale-up 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
 }
 
 @keyframes scale-up {
   from {
-    transform: scale(0.94);
+    transform: translate(-50%, -50%) scale(0.94);
     opacity: 0;
   }
   to {
-    transform: scale(1);
+    transform: translate(-50%, -50%) scale(1);
     opacity: 1;
   }
 }

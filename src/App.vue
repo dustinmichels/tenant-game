@@ -6,10 +6,12 @@ import SetupForm from "./components/SetupForm.vue";
 import FacilitatorControls from "./components/FacilitatorControls.vue";
 import TallyTable from "./components/TallyTable.vue";
 import BuildingCanvas from "./components/BuildingCanvas.vue";
+import PreGameSidebar from "./components/PreGameSidebar.vue";
 
 const gameStore = useGameStore();
 const {
   isConfigured,
+  hasBegun,
   buildings,
   buildingCount,
   peoplePerBuilding,
@@ -19,15 +21,13 @@ const {
   coalitionConnections,
   coalitions,
   buildingColorMap,
-  canUndoCoalition,
   personWidth,
-  personHeight,
-  personScale,
   landlordStartingMoney,
   landlordMoney,
   events,
   landlordPosition,
   showLandlord,
+  isEditBuildings,
   isEditPosition,
 } = storeToRefs(gameStore);
 
@@ -62,6 +62,7 @@ function handleSubmitSetup(payload: {
       v-if="isConfigured && !isSettingUpNewGame"
       :round="round"
       :phase="phase"
+      :has-begun="hasBegun"
       @next-phase="gameStore.nextPhase"
       @prev-phase="gameStore.prevPhase"
       @select-phase="gameStore.setPhase"
@@ -82,18 +83,20 @@ function handleSubmitSetup(payload: {
     <!-- Main Board: Left Tally Section, Right Building Canvas -->
     <div v-else class="board-layout">
       <aside class="board-tally-section" aria-label="Game Tally">
+        <PreGameSidebar v-if="!hasBegun" @begin="gameStore.beginGame" />
         <TallyTable
+          v-else
           :tallies="tallies"
           :current-round="round"
           :buildings="buildings"
           :landlord-money="landlordMoney"
           :landlord-starting-money="landlordStartingMoney"
-          :coalition-count="coalitions.length"
           :coalitions="coalitions"
           :building-color-map="buildingColorMap"
           :events="events"
           @add-event="gameStore.addEvent"
-          @remove-event="gameStore.removeEvent"
+          @undo-event="gameStore.undoEvent"
+          @remove-event="gameStore.undoEvent"
           @spend-landlord-money="gameStore.spendLandlordMoney"
           @earn-landlord-money="gameStore.earnLandlordMoney"
         />
@@ -101,6 +104,8 @@ function handleSubmitSetup(payload: {
 
       <section class="board-canvas-section" aria-label="Building Canvas">
         <BuildingCanvas
+          v-model:can-edit="isEditBuildings"
+          v-model:edit-buildings="isEditBuildings"
           v-model:can-move="isEditPosition"
           v-model:show-landlord="showLandlord"
           :buildings="buildings"
@@ -108,24 +113,19 @@ function handleSubmitSetup(payload: {
           :coalition-connections="coalitionConnections"
           :coalitions="coalitions"
           :building-color-map="buildingColorMap"
-          :can-undo-coalition="canUndoCoalition"
           :landlord-money="landlordMoney"
           :landlord-position="landlordPosition"
           :person-width="personWidth"
-          :person-height="personHeight"
-          :person-scale="personScale"
           @update-building-position="gameStore.updateBuildingPosition"
           @update-building-positions="gameStore.updateBuildingPositions"
           @update-landlord-position="gameStore.updateLandlordPosition"
           @adjust-tenants="gameStore.adjustBuildingTenants"
-          @update-building="gameStore.updateBuilding"
           @toggle-union="gameStore.toggleUnion"
           @toggle-eviction="gameStore.toggleEviction"
           @connect-coalition="gameStore.connectCoalition"
           @disconnect-coalition="gameStore.disconnectCoalition"
           @disconnect-building="gameStore.disconnectBuilding"
           @undo-coalition="gameStore.undoLastCoalition"
-          @shuffle-positions="gameStore.shufflePositions"
         />
       </section>
     </div>
