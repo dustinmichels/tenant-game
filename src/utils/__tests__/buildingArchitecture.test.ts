@@ -3,10 +3,13 @@ import {
   getRoofHeight,
   getDefaultBuildingRoofType,
   getDefaultBuildingHasBalcony,
-  getDefaultBuildingHasGrass,
+  getDefaultBuildingPlant,
+  getDefaultBuildingBush,
   generateRoofPaths,
   generateBalconyPaths,
-  generateFrontLawnPaths,
+  generateBushPaths,
+  generateFlowerPaths,
+  generatePlantPaths,
   ROOF_HEIGHT_FLAT,
   ROOF_HEIGHT_FLAT_CHAIRS,
   ROOF_HEIGHT_PITCHED,
@@ -30,12 +33,32 @@ describe("buildingArchitecture utility", () => {
     expect(getDefaultBuildingHasBalcony(2)).toBe(false);
     expect(getDefaultBuildingHasBalcony(3)).toBe(true);
     expect(getDefaultBuildingHasBalcony(4)).toBe(false);
-    expect(getDefaultBuildingHasGrass(1)).toBe(false);
-    expect(getDefaultBuildingHasGrass(2)).toBe(true);
-    expect(getDefaultBuildingHasGrass(3)).toBe(false);
-    expect(getDefaultBuildingHasGrass(4)).toBe(true);
+    expect(getDefaultBuildingPlant(1)).toBe("flower");
+    expect(getDefaultBuildingPlant(2)).toBe("none");
+    expect(getDefaultBuildingPlant(3)).toBe("bush");
+    expect(getDefaultBuildingPlant(4)).toBe("flower");
+    expect(getDefaultBuildingPlant(5)).toBe("none");
+    expect(getDefaultBuildingBush(1)).toBe("flower");
+    expect(getDefaultBuildingBush(2)).toBe("none");
+    expect(getDefaultBuildingBush(3)).toBe("bush");
+    expect(getDefaultBuildingBush(4)).toBe("flower");
+    expect(getDefaultBuildingBush(5)).toBe("none");
   });
 
+  it("enforces rarity: no more than 1 bush and no more than 2 flowers per 5 houses", () => {
+    // Check sliding windows of 5 across 50 houses
+    const totalHouses = 50;
+    const plants = Array.from({ length: totalHouses }, (_, i) => getDefaultBuildingPlant(i + 1));
+
+    for (let start = 0; start <= totalHouses - 5; start++) {
+      const window = plants.slice(start, start + 5);
+      const bushCount = window.filter((p) => p === "bush").length;
+      const flowerCount = window.filter((p) => p === "flower").length;
+
+      expect(bushCount).toBeLessThanOrEqual(1);
+      expect(flowerCount).toBeLessThanOrEqual(2);
+    }
+  });
   it("generates valid SVG paths for pitched roof", () => {
     const paths = generateRoofPaths("pitched", 200, 38, 100, "#3f382f", false);
     expect(paths.length).toBeGreaterThan(0);
@@ -85,8 +108,8 @@ describe("buildingArchitecture utility", () => {
     }
   });
 
-  it("generates valid front lawn grass paths", () => {
-    const paths = generateFrontLawnPaths(180, 500, "#3f382f", false);
+  it("generates valid landscaping bush paths", () => {
+    const paths = generateBushPaths(500, "#3f382f", false);
     expect(paths.length).toBeGreaterThan(0);
     const strokes = paths.map((p) => p.stroke).filter((s) => s && s !== "none");
     expect(strokes.length).toBeGreaterThan(0);
@@ -94,6 +117,26 @@ describe("buildingArchitecture utility", () => {
       expect(typeof p.d).toBe("string");
       expect(p.d.length).toBeGreaterThan(0);
     }
+  });
+
+  it("generates valid landscaping flower paths", () => {
+    const paths = generateFlowerPaths(500, "#3f382f", false);
+    expect(paths.length).toBeGreaterThan(0);
+    const strokes = paths.map((p) => p.stroke).filter((s) => s && s !== "none");
+    expect(strokes.length).toBeGreaterThan(0);
+    for (const p of paths) {
+      expect(typeof p.d).toBe("string");
+      expect(p.d.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("generates correct paths via generatePlantPaths", () => {
+    const flowerPaths = generatePlantPaths("flower", 500, "#3f382f", false);
+    const bushPaths = generatePlantPaths("bush", 500, "#3f382f", false);
+    const nonePaths = generatePlantPaths("none", 500, "#3f382f", false);
+    expect(flowerPaths.length).toBeGreaterThan(0);
+    expect(bushPaths.length).toBeGreaterThan(0);
+    expect(nonePaths.length).toBe(0);
   });
   it("generates valid ornamental balcony paths", () => {
     const paths = generateBalconyPaths(700, "#5c4f3d", false);

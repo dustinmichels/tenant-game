@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Building, Tenant, CoalitionGroup, BuildingRoofType } from "../types/game";
+import type {
+  Building,
+  Tenant,
+  CoalitionGroup,
+  BuildingRoofType,
+  BuildingBush,
+  BuildingPlant,
+} from "../types/game";
 import { isBuildingOrganized, getBuildingUnionCount } from "../utils/coalitions";
 import { getTenantGridCols, PERSON_ASPECT_RATIO } from "../utils/layout";
 import { BASELINE_PERSON_WIDTH } from "../utils/sizing";
@@ -11,9 +18,11 @@ import {
   getRoofHeight,
   getDefaultBuildingRoofType,
   getDefaultBuildingHasBalcony,
-  getDefaultBuildingHasGrass,
+  getDefaultBuildingPlant,
+  getDefaultBuildingBush,
   generateRoofPaths,
-  generateFrontLawnPaths,
+  generatePlantPaths,
+  generateBushPaths,
 } from "../utils/buildingArchitecture";
 import RoughBox from "./RoughBox.vue";
 import BuildingWindow from "./BuildingWindow.vue";
@@ -154,33 +163,37 @@ function shouldShowBalcony(idx: number): boolean {
   return true;
 }
 
-const effectiveHasGrass = computed(() => {
-  return props.building.hasGrass ?? getDefaultBuildingHasGrass(props.building.index);
+const effectivePlant = computed<BuildingPlant>(() => {
+  if (props.building.plant) return props.building.plant;
+  if (props.building.bush) {
+    if (props.building.bush === "none") return "none";
+    if (props.building.bush === "flower") return "flower";
+    return "bush";
+  }
+  return getDefaultBuildingPlant(props.building.index);
 });
 
-const lawnPaths = computed<PathInfo[]>(() => {
-  if (!effectiveHasGrass.value) return [];
-  return generateFrontLawnPaths(
-    cardWidth.value,
+const effectiveBush = computed<BuildingBush>(() => effectivePlant.value);
+
+const plantPaths = computed<PathInfo[]>(() => {
+  if (effectivePlant.value === "none") return [];
+  return generatePlantPaths(
+    effectivePlant.value,
     buildingSeed.value + 500,
     outlineColor.value,
     isOrganized.value,
   );
 });
 
-const dragHandleTop = computed(() => {
-  if (effectiveRoofType.value === "pitched") return -18;
-  if (effectiveRoofType.value === "mansard") return -15;
-  if (effectiveRoofType.value === "flat-chairs") return -15;
-  return -13;
-});
-
+const bushPaths = plantPaths;
 const settingsBtnTop = computed(() => {
   if (effectiveRoofType.value === "pitched") return 22;
   if (effectiveRoofType.value === "mansard") return 16;
   if (effectiveRoofType.value === "flat-chairs") return 18;
   return -10;
 });
+
+const dragHandleTop = computed(() => settingsBtnTop.value);
 
 const pinBtnTop = computed(() => {
   if (effectiveRoofType.value === "pitched") return 22;
@@ -221,7 +234,7 @@ const pinBtnTop = computed(() => {
         @pointerdown.stop
         @click.stop="emit('adjust-tenants', building)"
       >
-        <Pencil :size="13" :stroke-width="1.8" class="settings-pencil-icon" aria-hidden="true" />
+        <Pencil :size="18" :stroke-width="1.9" class="settings-pencil-icon" aria-hidden="true" />
       </button>
     </transition>
     <!-- Coalition connector circle button/pin -->
@@ -269,7 +282,7 @@ const pinBtnTop = computed(() => {
         aria-label="Drag to move building"
         @pointerdown.stop.prevent="handleDragPointerDown"
       >
-        <GripVertical :size="14" :stroke-width="1.5" class="drag-icon" aria-hidden="true" />
+        <GripVertical :size="18" :stroke-width="1.8" class="drag-icon" aria-hidden="true" />
         <span class="drag-label">Move</span>
       </button>
     </transition>
@@ -385,20 +398,16 @@ const pinBtnTop = computed(() => {
       </div>
     </RoughBox>
 
-    <!-- Front lawn with grass (if building has grass) -->
+    <!-- Landscaping plant (flower or bush in front of the house) -->
     <div
-      v-if="effectiveHasGrass"
-      class="building-front-lawn-area"
-      :class="{ 'is-draggable': isEditable }"
-      :style="{
-        width: `${cardWidth}px`,
-        height: '20px',
-      }"
+      v-if="effectivePlant !== 'none'"
+      class="building-plant-area building-bush-area"
+      :class="[`plant-${effectivePlant}`, `bush-${effectivePlant}`, { 'is-draggable': isEditable }]"
       @pointerdown="handleDragPointerDown"
     >
-      <svg :viewBox="`0 0 ${cardWidth} 20`" class="front-lawn-svg" aria-hidden="true">
+      <svg viewBox="0 0 58 44" class="plant-svg bush-svg" aria-hidden="true">
         <path
-          v-for="(p, idx) in lawnPaths"
+          v-for="(p, idx) in plantPaths"
           :key="idx"
           :d="p.d"
           :stroke="p.stroke"
@@ -568,21 +577,23 @@ const pinBtnTop = computed(() => {
 
 .building-drag-handle {
   position: absolute;
-  top: -13px;
+  top: -10px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 25;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 3px 11px 3px 9px;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px 0 10px;
+  box-sizing: border-box;
   background-color: #faf5eb;
   border: 1.5px solid #786b59;
-  border-radius: 14px;
+  border-radius: 17px;
   color: #574c3d;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: 13.5px;
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: grab;
@@ -612,7 +623,7 @@ const pinBtnTop = computed(() => {
 }
 
 .drag-icon {
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1;
   opacity: 0.85;
 }
@@ -753,9 +764,9 @@ const pinBtnTop = computed(() => {
 .building-settings-btn {
   position: absolute;
   top: -10px;
-  left: -10px;
-  width: 26px;
-  height: 26px;
+  left: -12px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   border: 2px solid var(--building-accent, #786b59);
   background-color: #fffdfa;
@@ -763,7 +774,7 @@ const pinBtnTop = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   z-index: 25;
   box-shadow:
@@ -781,7 +792,7 @@ const pinBtnTop = computed(() => {
 }
 
 .building-settings-btn:hover {
-  transform: scale(1.22);
+  transform: scale(1.18);
   background-color: #fef08a;
   border-color: #a16207;
   color: #713f12;
@@ -802,7 +813,7 @@ const pinBtnTop = computed(() => {
 }
 
 .building-settings-btn:active {
-  transform: scale(1.12);
+  transform: scale(1.08);
   background-color: #fde047;
   border-color: #854d0e;
 }
@@ -844,25 +855,40 @@ const pinBtnTop = computed(() => {
   transform: translateX(-50%) scale(0.4);
 }
 
-/* Front lawn */
-.building-front-lawn-area {
-  position: relative;
-  margin-top: -2px;
+/* Landscaping plant in front of house (flower or bush) */
+.building-plant-area,
+.building-bush-area {
+  position: absolute;
+  bottom: -4px;
+  left: -12px;
+  width: 56px;
+  height: 44px;
   overflow: visible;
+  z-index: 12;
   cursor: default;
   touch-action: none;
   user-select: none;
+  pointer-events: auto;
 }
 
-.building-front-lawn-area.is-draggable {
+.building-bush-area.bush-right {
+  left: auto;
+  right: -12px;
+  transform: scaleX(-1);
+}
+
+.building-plant-area.is-draggable,
+.building-bush-area.is-draggable {
   cursor: grab;
 }
 
-.building-front-lawn-area.is-draggable:active {
+.building-plant-area.is-draggable:active,
+.building-bush-area.is-draggable:active {
   cursor: grabbing;
 }
 
-.front-lawn-svg {
+.plant-svg,
+.bush-svg {
   width: 100%;
   height: 100%;
   display: block;
@@ -870,7 +896,8 @@ const pinBtnTop = computed(() => {
   transition: filter 0.25s ease;
 }
 
-.building-card-wrapper.is-building-organized .front-lawn-svg {
+.building-card-wrapper.is-building-organized .plant-svg,
+.building-card-wrapper.is-building-organized .bush-svg {
   filter: drop-shadow(0 0 2px var(--building-accent));
 }
 </style>

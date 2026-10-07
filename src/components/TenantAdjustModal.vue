@@ -3,14 +3,15 @@ import { ref, computed, watch } from "vue";
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent, DialogTitle } from "reka-ui";
 import { Dices, X, CornerDownLeft } from "lucide-vue-next";
 import { useEventListener } from "@vueuse/core";
-import type { Building, BuildingRoofType } from "../types/game";
+import type { Building, BuildingRoofType, BuildingBush, BuildingPlant } from "../types/game";
 import { BUILDING_COLORS } from "../types/game";
 import { getBuildingColor } from "../utils/coalitions";
 import { getRandomPrimaryColor } from "../utils/colorTheory";
 import {
   getDefaultBuildingRoofType,
   getDefaultBuildingHasBalcony,
-  getDefaultBuildingHasGrass,
+  getDefaultBuildingPlant,
+  getDefaultBuildingBush,
 } from "../utils/buildingArchitecture";
 import RoughBox from "./RoughBox.vue";
 import RoughButton from "./RoughButton.vue";
@@ -32,7 +33,8 @@ const emit = defineEmits<{
       color: string;
       roofType: BuildingRoofType;
       hasBalcony: boolean;
-      hasGrass: boolean;
+      plant: BuildingPlant;
+      bush?: BuildingBush;
     },
   ): void;
   (e: "save", buildingId: string, count: number): void;
@@ -61,8 +63,15 @@ const roofInput = ref<BuildingRoofType>(
 const hasBalconyInput = ref<boolean>(
   props.building?.hasBalcony ?? getDefaultBuildingHasBalcony(props.building?.index ?? 1),
 );
-const hasGrassInput = ref<boolean>(
-  props.building?.hasGrass ?? getDefaultBuildingHasGrass(props.building?.index ?? 1),
+const plantInput = ref<BuildingPlant>(
+  props.building?.plant ??
+    (props.building?.bush === "none"
+      ? "none"
+      : props.building?.bush === "flower"
+        ? "flower"
+        : props.building?.bush
+          ? "bush"
+          : getDefaultBuildingPlant(props.building?.index ?? 1)),
 );
 watch(
   () => [props.show, props.building],
@@ -74,8 +83,15 @@ watch(
       roofInput.value = props.building.roofType ?? getDefaultBuildingRoofType(props.building.index);
       hasBalconyInput.value =
         props.building.hasBalcony ?? getDefaultBuildingHasBalcony(props.building.index);
-      hasGrassInput.value =
-        props.building.hasGrass ?? getDefaultBuildingHasGrass(props.building.index);
+      plantInput.value =
+        props.building.plant ??
+        (props.building.bush === "none"
+          ? "none"
+          : props.building.bush === "flower"
+            ? "flower"
+            : props.building.bush
+              ? "bush"
+              : getDefaultBuildingPlant(props.building.index));
       showPreservationWarning.value = false;
     }
   },
@@ -186,7 +202,8 @@ function handleSave() {
       color: finalColor,
       roofType: roofInput.value,
       hasBalcony: hasBalconyInput.value,
-      hasGrass: hasGrassInput.value,
+      plant: plantInput.value,
+      bush: plantInput.value,
     });
     emit("close");
   }
@@ -513,27 +530,37 @@ useEventListener(window, "keydown", handleModalKeydown);
                   </div>
 
                   <div class="display-field">
-                    <label class="field-label">Front Lawn</label>
-                    <div class="toggle-group" role="radiogroup" aria-label="Front Lawn">
+                    <label class="field-label">Plant</label>
+                    <div class="toggle-group" role="radiogroup" aria-label="Plant">
                       <button
                         type="button"
                         class="toggle-btn"
-                        :class="{ 'is-active': !hasGrassInput }"
-                        :aria-checked="!hasGrassInput"
+                        :class="{ 'is-active': plantInput === 'none' }"
+                        :aria-checked="plantInput === 'none'"
                         role="radio"
-                        @click="hasGrassInput = false"
+                        @click="plantInput = 'none'"
                       >
                         None
                       </button>
                       <button
                         type="button"
                         class="toggle-btn"
-                        :class="{ 'is-active': hasGrassInput }"
-                        :aria-checked="hasGrassInput"
+                        :class="{ 'is-active': plantInput === 'bush' }"
+                        :aria-checked="plantInput === 'bush'"
                         role="radio"
-                        @click="hasGrassInput = true"
+                        @click="plantInput = 'bush'"
                       >
-                        Grass
+                        Bush
+                      </button>
+                      <button
+                        type="button"
+                        class="toggle-btn"
+                        :class="{ 'is-active': plantInput === 'flower' }"
+                        :aria-checked="plantInput === 'flower'"
+                        role="radio"
+                        @click="plantInput = 'flower'"
+                      >
+                        Flower
                       </button>
                     </div>
                   </div>

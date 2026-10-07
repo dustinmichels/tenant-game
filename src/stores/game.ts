@@ -12,6 +12,8 @@ import type {
   GameEventAction,
   CoalitionGroup,
   BuildingRoofType,
+  BuildingBush,
+  BuildingPlant,
 } from "../types/game";
 import {
   isBuildingOrganized,
@@ -26,6 +28,7 @@ import { generateDefaultPositions } from "../utils/positions";
 import { calculateOptimalPersonSize, BASELINE_PERSON_WIDTH } from "../utils/sizing";
 import { generateDivergentPalette } from "../utils/colorTheory";
 import { calculateDefaultLandlordMoney } from "../utils/currency";
+import { getDefaultBuildingPlant } from "../utils/buildingArchitecture";
 import {
   formatSpendEventText,
   formatEarnEventText,
@@ -117,7 +120,7 @@ function generateBuildings(
     const pos = positions[i - 1] ?? { x: 10 + ((i * 20) % 70), y: 15 + ((i * 22) % 65) };
     const roofType = roofVariations[(i - 1) % roofVariations.length]!;
     const hasBalcony = (i - 1) % 2 === 0;
-    const hasGrass = (i - 1) % 2 === 1;
+    const plant: BuildingPlant = getDefaultBuildingPlant(i);
 
     result.push({
       id: buildingId,
@@ -129,7 +132,8 @@ function generateBuildings(
       y: pos.y,
       roofType,
       hasBalcony,
-      hasGrass,
+      plant,
+      bush: plant,
     });
   }
   return result;
@@ -572,7 +576,7 @@ export const useGameStore = defineStore(
       color?: string,
       roofType?: BuildingRoofType,
       hasBalcony?: boolean,
-      hasGrass?: boolean,
+      plant?: BuildingPlant | BuildingBush,
     ) {
       const building = buildings.value.find((b) => b.id === buildingId);
       if (!building) return;
@@ -589,8 +593,17 @@ export const useGameStore = defineStore(
       if (typeof hasBalcony === "boolean") {
         building.hasBalcony = hasBalcony;
       }
-      if (typeof hasGrass === "boolean") {
-        building.hasGrass = hasGrass;
+      if (typeof plant === "string") {
+        if (plant === "flower") {
+          building.plant = "flower";
+          building.bush = "flower";
+        } else if (plant === "bush" || plant === "left" || plant === "right") {
+          building.plant = "bush";
+          building.bush = plant;
+        } else if (plant === "none") {
+          building.plant = "none";
+          building.bush = "none";
+        }
       }
       const preservedCount = building.tenants.filter((t) => t.isInstigator || t.inUnion).length;
       const minAllowed = Math.max(1, preservedCount);

@@ -8,6 +8,8 @@ export interface Tenant {
   evictedRound?: number;
 }
 export type BuildingRoofType = "flat" | "pitched" | "mansard" | "flat-chairs";
+export type BuildingPlant = "none" | "bush" | "flower";
+export type BuildingBush = BuildingPlant | "left" | "right";
 export interface Building {
   id: string;
   index: number;
@@ -18,7 +20,8 @@ export interface Building {
   y: number; // percentage (0 to 100) down canvas
   roofType?: BuildingRoofType;
   hasBalcony?: boolean;
-  hasGrass?: boolean;
+  plant?: BuildingPlant;
+  bush?: BuildingBush;
 }
 
 export interface RoundTally {

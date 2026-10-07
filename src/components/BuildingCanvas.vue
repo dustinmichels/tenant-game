@@ -8,6 +8,8 @@ import type {
   CoalitionGroup,
   BuildingDimensions,
   BuildingRoofType,
+  BuildingBush,
+  BuildingPlant,
 } from "../types/game";
 import {
   clampBuildingPosition,
@@ -123,7 +125,7 @@ const emit = defineEmits<{
     color?: string,
     roofType?: BuildingRoofType,
     hasBalcony?: boolean,
-    hasGrass?: boolean,
+    plant?: BuildingPlant | BuildingBush,
   ): void;
   (e: "toggle-union", buildingId: string, tenantId: string, join?: boolean): void;
   (e: "toggle-eviction", buildingId: string, tenantId: string, evicted?: boolean): void;
@@ -506,7 +508,8 @@ function handleSaveAdjustTenants(
         color: string;
         roofType?: BuildingRoofType;
         hasBalcony?: boolean;
-        hasGrass?: boolean;
+        plant?: BuildingPlant;
+        bush?: BuildingBush;
       }
     | number,
 ) {
@@ -519,7 +522,7 @@ function handleSaveAdjustTenants(
       settingsOrCount.color,
       settingsOrCount.roofType,
       settingsOrCount.hasBalcony,
-      settingsOrCount.hasGrass,
+      settingsOrCount.plant ?? settingsOrCount.bush,
     );
   } else {
     emit("adjust-tenants", buildingId, settingsOrCount);

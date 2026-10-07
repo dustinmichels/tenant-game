@@ -237,7 +237,7 @@ describe("game store building architectural variety", () => {
     expect(store.buildings.length).toBe(4);
     const roofs = store.buildings.map((b) => b.roofType);
     const balconies = store.buildings.map((b) => b.hasBalcony);
-    const grassList = store.buildings.map((b) => b.hasGrass);
+    const plantList = store.buildings.map((b) => b.plant ?? b.bush);
 
     // Contains flat, pitched, and flat-chairs roofs
     expect(roofs).toContain("flat");
@@ -248,23 +248,47 @@ describe("game store building architectural variety", () => {
     expect(balconies).toContain(true);
     expect(balconies).toContain(false);
 
-    // Contains buildings both with and without grass lawn
-    expect(grassList).toContain(true);
-    expect(grassList).toContain(false);
+    // Contains buildings with plant variations (flower, bush, none)
+    expect(plantList).toContain("flower");
+    expect(plantList).toContain("bush");
+    expect(plantList).toContain("none");
+  });
+  it("generates building plants respecting rarity limits (<= 1 bush, <= 2 flowers per 5 houses)", () => {
+    const store = useGameStore();
+    store.setupGame(15, 4);
+
+    const plants = store.buildings.map((b) => b.plant ?? "none");
+    for (let start = 0; start <= plants.length - 5; start++) {
+      const window = plants.slice(start, start + 5);
+      const bushCount = window.filter((p) => p === "bush").length;
+      const flowerCount = window.filter((p) => p === "flower").length;
+
+      expect(bushCount).toBeLessThanOrEqual(1);
+      expect(flowerCount).toBeLessThanOrEqual(2);
+    }
   });
 
-  it("updates roof type and hasBalcony via adjustBuildingTenants", () => {
+  it("updates roof type, hasBalcony, and plant via adjustBuildingTenants", () => {
     const store = useGameStore();
     store.setupGame(2, 4);
 
     const b1 = store.buildings[0]!;
-    store.adjustBuildingTenants(b1.id, 5, "Empire Heights", "#d97706", "flat-chairs", true, true);
+    store.adjustBuildingTenants(
+      b1.id,
+      5,
+      "Empire Heights",
+      "#d97706",
+      "flat-chairs",
+      true,
+      "flower",
+    );
 
     expect(b1.label).toBe("Empire Heights");
     expect(b1.color).toBe("#d97706");
     expect(b1.roofType).toBe("flat-chairs");
     expect(b1.hasBalcony).toBe(true);
-    expect(b1.hasGrass).toBe(true);
+    expect(b1.plant).toBe("flower");
+    expect(b1.bush).toBe("flower");
   });
 
   it("preserves instigator and existing union members and never reduces lower than is allowed", () => {

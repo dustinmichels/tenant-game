@@ -165,7 +165,7 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
         aria-label="Drag to move Landlord, Inc."
         @pointerdown.stop.prevent="handleDragPointerDown"
       >
-        <GripVertical :size="14" :stroke-width="1.5" class="drag-icon" aria-hidden="true" />
+        <GripVertical :size="18" :stroke-width="1.8" class="drag-icon" aria-hidden="true" />
         <span class="drag-label">Move</span>
       </button>
     </transition>
@@ -273,21 +273,23 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
 /* Drag indicator handle on top */
 .building-drag-handle {
   position: absolute;
-  top: 0px;
+  top: -10px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 25;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 2.5px 10px 2.5px 8px;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px 0 10px;
+  box-sizing: border-box;
   background-color: #f0f9ff;
   border: 1.5px solid #0369a1;
-  border-radius: 14px;
+  border-radius: 17px;
   color: #075985;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: grab;
@@ -315,7 +317,7 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
 }
 
 .drag-icon {
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1;
   opacity: 0.85;
 }
