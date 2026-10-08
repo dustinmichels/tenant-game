@@ -5,6 +5,7 @@ import type {
   Building,
   Tenant,
   GamePhase,
+  GameScreen,
   RoundTally,
   CoalitionConnection,
   GameEvent,
@@ -15,6 +16,7 @@ import type {
   BuildingBush,
   BuildingPlant,
 } from "../types/game";
+import { BUILDING_COLORS } from "../types/game";
 import {
   isBuildingOrganized,
   getBuildingUnionCount,
@@ -28,7 +30,10 @@ import { generateDefaultPositions } from "../utils/positions";
 import { calculateOptimalPersonSize, BASELINE_PERSON_WIDTH } from "../utils/sizing";
 import { generateDivergentPalette } from "../utils/colorTheory";
 import { calculateDefaultLandlordMoney } from "../utils/currency";
-import { getDefaultBuildingPlant } from "../utils/buildingArchitecture";
+import {
+  getDefaultBuildingPlant,
+  pickFlowerPaletteForBuilding,
+} from "../utils/buildingArchitecture";
 import {
   formatSpendEventText,
   formatEarnEventText,
@@ -73,6 +78,8 @@ function createDefaultState(): GameState {
     events: [],
     landlordPosition: { x: 82, y: 3 },
     showLandlord: false,
+    canEdit: true,
+    controlsCollapsed: false,
   };
 }
 
@@ -120,13 +127,16 @@ function generateBuildings(
     const pos = positions[i - 1] ?? { x: 10 + ((i * 20) % 70), y: 15 + ((i * 22) % 65) };
     const roofType = roofVariations[(i - 1) % roofVariations.length]!;
     const hasBalcony = (i - 1) % 2 === 0;
+    const buildingColor = divergentColors[i - 1] ?? getBuildingColor(i, buildingCount);
     const plant: BuildingPlant = getDefaultBuildingPlant(i);
+    const flowerColor =
+      plant === "flower" ? pickFlowerPaletteForBuilding(buildingColor, i).petal : undefined;
 
     result.push({
       id: buildingId,
       index: i,
       label: `Building ${i}`,
-      color: divergentColors[i - 1] ?? getBuildingColor(i, buildingCount),
+      color: buildingColor,
       tenants,
       x: pos.x,
       y: pos.y,
@@ -134,6 +144,7 @@ function generateBuildings(
       hasBalcony,
       plant,
       bush: plant,
+      flowerColor,
     });
   }
   return result;
@@ -161,8 +172,27 @@ export const useGameStore = defineStore(
     const phase = ref<GamePhase>(initial.phase);
     const tallies = ref<Record<number, RoundTally>>(initial.tallies);
     const events = ref<GameEvent[]>(initial.events ?? []);
-    const isEditBuildings = ref(true);
-    const isEditPosition = ref(true);
+    const isSettingUpNewGame = ref(false);
+    const canEdit = ref(initial.hasBegun ? false : (initial.canEdit ?? true));
+    const isEditBuildings = canEdit;
+    const isEditPosition = canEdit;
+    const controlsCollapsed = ref(initial.hasBegun ? true : (initial.controlsCollapsed ?? false));
+
+    // Authoritative screen flow: new game screen -> neighborhood setup screen -> gameplay
+    const currentScreen = computed<GameScreen>(() => {
+      if (!isConfigured.value || isSettingUpNewGame.value) {
+        return "new-game";
+      }
+      if (!hasBegun.value) {
+        return "neighborhood-setup";
+      }
+      return "gameplay";
+    });
+
+    // Unified gates for screen modes
+    const isNewGameScreen = computed(() => currentScreen.value === "new-game");
+    const isNeighborhoodSetup = computed(() => currentScreen.value === "neighborhood-setup");
+    const isGameplay = computed(() => currentScreen.value === "gameplay");
 
     const coalitions = computed<CoalitionGroup[]>(() =>
       computeCoalitionGroups(buildings.value, coalitionConnections.value),
@@ -254,8 +284,9 @@ export const useGameStore = defineStore(
       personWidth.value = sizing.personWidth;
       isConfigured.value = true;
       hasBegun.value = false;
-      isEditBuildings.value = true;
-      isEditPosition.value = true;
+      isSettingUpNewGame.value = false;
+      canEdit.value = true;
+      controlsCollapsed.value = false;
       buildings.value = newBuildings;
       round.value = 1;
       phase.value = 1;
@@ -563,10 +594,19 @@ export const useGameStore = defineStore(
       };
     }
 
+    function openNewGame() {
+      isSettingUpNewGame.value = true;
+    }
+
+    function cancelNewGame() {
+      isSettingUpNewGame.value = false;
+    }
+
     function beginGame() {
       hasBegun.value = true;
-      isEditBuildings.value = false;
-      isEditPosition.value = false;
+      isSettingUpNewGame.value = false;
+      canEdit.value = false;
+      controlsCollapsed.value = true;
     }
 
     function adjustBuildingTenants(
@@ -586,6 +626,9 @@ export const useGameStore = defineStore(
       }
       if (typeof color === "string" && color.trim()) {
         building.color = color.trim();
+        if (building.plant === "flower" || building.bush === "flower") {
+          building.flowerColor = pickFlowerPaletteForBuilding(building.color, building.index).petal;
+        }
       }
       if (roofType) {
         building.roofType = roofType;
@@ -597,12 +640,15 @@ export const useGameStore = defineStore(
         if (plant === "flower") {
           building.plant = "flower";
           building.bush = "flower";
+          building.flowerColor = pickFlowerPaletteForBuilding(building.color, building.index).petal;
         } else if (plant === "bush" || plant === "left" || plant === "right") {
           building.plant = "bush";
           building.bush = plant;
+          building.flowerColor = undefined;
         } else if (plant === "none") {
           building.plant = "none";
           building.bush = "none";
+          building.flowerColor = undefined;
         }
       }
       const preservedCount = building.tenants.filter((t) => t.isInstigator || t.inUnion).length;
@@ -642,20 +688,7 @@ export const useGameStore = defineStore(
       }
 
       if (clampedTarget !== currentCount) {
-        const bCount = buildings.value.length || buildingCount.value || 4;
-        const maxTenants = Math.max(
-          ...buildings.value.map((b) => b.tenants?.length || 0),
-          peoplePerBuilding.value || 8,
-          1,
-        );
-        let cW = 1050;
-        let cH = 750;
-        if (typeof window !== "undefined" && window.innerWidth > 0 && window.innerHeight > 0) {
-          cW = Math.max(800, window.innerWidth * 0.72);
-          cH = Math.max(600, window.innerHeight - 65);
-        }
-        const sizing = calculateOptimalPersonSize(bCount, maxTenants, cW, cH);
-        personWidth.value = sizing.personWidth;
+        recalculateSizing();
       }
 
       syncAllRoundTallies();
@@ -734,6 +767,145 @@ export const useGameStore = defineStore(
       syncAllRoundTallies();
       return true;
     }
+    function recalculateSizing() {
+      const bCount = buildings.value.length || buildingCount.value || 4;
+      const maxTenants = Math.max(
+        ...buildings.value.map((b) => b.tenants?.length || 0),
+        peoplePerBuilding.value || 8,
+        1,
+      );
+      let cW = 1050;
+      let cH = 750;
+      if (typeof window !== "undefined" && window.innerWidth > 0 && window.innerHeight > 0) {
+        cW = Math.max(800, window.innerWidth * 0.72);
+        cH = Math.max(600, window.innerHeight - 65);
+      }
+      const sizing = calculateOptimalPersonSize(bCount, maxTenants, cW, cH);
+      personWidth.value = sizing.personWidth;
+    }
+
+    function findNextBuildingPosition(peopleCount: number): { x: number; y: number } {
+      const currentCount = buildings.value.length;
+      const newCount = currentCount + 1;
+      const defaults = generateDefaultPositions(newCount, peopleCount);
+      const candidate = defaults[currentCount];
+
+      if (candidate) {
+        const collides = buildings.value.some((b) => {
+          return Math.abs(b.x - candidate.x) < 18 && Math.abs(b.y - candidate.y) < 22;
+        });
+        if (!collides) {
+          return candidate;
+        }
+      }
+
+      let bestCandidate = { x: 45, y: 35 };
+      let maxMinDistance = -1;
+
+      for (let x = 10; x <= 75; x += 15) {
+        for (let y = 12; y <= 65; y += 18) {
+          if (showLandlord.value && x >= 75 && y <= 25) continue;
+
+          let minDistance = Infinity;
+          for (const b of buildings.value) {
+            const dx = b.x - x;
+            const dy = b.y - y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < minDistance) {
+              minDistance = dist;
+            }
+          }
+          if (minDistance > maxMinDistance) {
+            maxMinDistance = minDistance;
+            bestCandidate = { x, y };
+          }
+        }
+      }
+
+      return bestCandidate;
+    }
+
+    function pickNewBuildingColor(index: number): string {
+      const usedColors = new Set(buildings.value.map((b) => b.color.toLowerCase()));
+      const availableColor = BUILDING_COLORS.find((c) => !usedColors.has(c.toLowerCase()));
+      if (availableColor) return availableColor;
+      return getBuildingColor(index, buildings.value.length + 1);
+    }
+
+    function addBuilding(countOfTenants?: number): Building {
+      const count = Math.max(
+        1,
+        Math.min(200, Math.floor(countOfTenants ?? peoplePerBuilding.value ?? 8)),
+      );
+      const maxIndex = buildings.value.reduce((max, b) => Math.max(max, b.index || 0), 0);
+      const nextIndex = maxIndex + 1;
+      const buildingId = `b-${nextIndex}-${Date.now() % 10000}`;
+      const pos = findNextBuildingPosition(count);
+      const buildingColor = pickNewBuildingColor(nextIndex);
+      const roofVariations: readonly BuildingRoofType[] = [
+        "flat",
+        "pitched",
+        "mansard",
+        "flat-chairs",
+        "flat",
+        "pitched",
+        "flat-chairs",
+      ];
+      const roofType = roofVariations[(nextIndex - 1) % roofVariations.length]!;
+      const hasBalcony = (nextIndex - 1) % 2 === 0;
+      const plant: BuildingPlant = getDefaultBuildingPlant(nextIndex);
+      const flowerColor =
+        plant === "flower"
+          ? pickFlowerPaletteForBuilding(buildingColor, nextIndex).petal
+          : undefined;
+
+      const tenants: Tenant[] = [];
+      const instigatorIdx = Math.floor(Math.random() * count);
+      for (let j = 1; j <= count; j++) {
+        const isInstigator = j - 1 === instigatorIdx;
+        tenants.push({
+          id: `t-${nextIndex}-${j}-${Date.now() % 10000}`,
+          buildingId,
+          variant: (nextIndex + j) % VARIANT_COUNT,
+          isInstigator,
+          inUnion: isInstigator,
+          isEvicted: false,
+        });
+      }
+
+      const newBuilding: Building = {
+        id: buildingId,
+        index: nextIndex,
+        label: `Building ${nextIndex}`,
+        color: buildingColor,
+        tenants,
+        x: pos.x,
+        y: pos.y,
+        roofType,
+        hasBalcony,
+        plant,
+        bush: plant,
+        flowerColor,
+      };
+
+      buildings.value.push(newBuilding);
+      buildingCount.value = buildings.value.length;
+      recalculateSizing();
+      syncAllRoundTallies();
+      return newBuilding;
+    }
+
+    function deleteBuilding(buildingId: string): boolean {
+      const idx = buildings.value.findIndex((b) => b.id === buildingId);
+      if (idx === -1) return false;
+
+      buildings.value.splice(idx, 1);
+      buildingCount.value = buildings.value.length;
+      disconnectBuilding(buildingId);
+      recalculateSizing();
+      syncAllRoundTallies();
+      return true;
+    }
 
     return {
       // State
@@ -752,8 +924,17 @@ export const useGameStore = defineStore(
       events,
       landlordPosition,
       showLandlord,
+      canEdit,
+      isSettingUpNewGame,
       isEditBuildings,
       isEditPosition,
+      controlsCollapsed,
+
+      // Screen Flow & Gates
+      currentScreen,
+      isNewGameScreen,
+      isNeighborhoodSetup,
+      isGameplay,
 
       // Computed
       coalitions,
@@ -763,6 +944,8 @@ export const useGameStore = defineStore(
       coalitionBuildingsCount,
 
       // Actions
+      openNewGame,
+      cancelNewGame,
       setupGame,
       beginGame,
       spendLandlordMoney,
@@ -782,6 +965,8 @@ export const useGameStore = defineStore(
       disconnectCoalition,
       disconnectBuilding,
       undoLastCoalition,
+      addBuilding,
+      deleteBuilding,
     };
   },
   {

@@ -13,6 +13,7 @@ import {
   colorDistance,
   alterColorToBeDifferent,
   computeCoalitionColor,
+  muteColor,
   MIN_COALITION_COLOR_DISTANCE,
 } from "../colorTheory";
 import { useGameStore } from "../../stores/game";
@@ -319,5 +320,29 @@ describe("Coalition color combination and collision avoidance", () => {
     const result = computeCoalitionColor([b1, b2], [], ["#ab39c3"]);
     expect(result).not.toBe("#ab39c3");
     expect(colorDistance(result, "#ab39c3")).toBeGreaterThanOrEqual(MIN_COALITION_COLOR_DISTANCE);
+  });
+});
+
+describe("muteColor utility for neighborhood setup mode", () => {
+  it("produces a softer, more muted color by reducing chroma", () => {
+    const vividColors = ["#e0633b", "#2563eb", "#10b981", "#d97706", "#8b5cf6"];
+    for (const hex of vividColors) {
+      const muted = muteColor(hex);
+      expect(muted).not.toBe(hex);
+      expect(typeof muted).toBe("string");
+      expect(muted.startsWith("#")).toBe(true);
+    }
+  });
+
+  it("gracefully handles empty or invalid strings", () => {
+    expect(muteColor("")).toBe("");
+    expect(muteColor("invalid-color")).toBe("invalid-color");
+  });
+
+  it("allows custom chroma factors", () => {
+    const hex = "#2563eb";
+    const standardMuted = muteColor(hex, 0.65);
+    const extraMuted = muteColor(hex, 0.3);
+    expect(standardMuted).not.toBe(extraMuted);
   });
 });

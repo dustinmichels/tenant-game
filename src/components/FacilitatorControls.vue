@@ -2,7 +2,7 @@
 import { computed, shallowRef } from "vue";
 import { Dices, Maximize, Minimize } from "lucide-vue-next";
 import { useFullscreen } from "@vueuse/core";
-import type { GamePhase } from "../types/game";
+import type { GamePhase, GameScreen } from "../types/game";
 import RoughButton from "./RoughButton.vue";
 import RoundTracker from "./RoundTracker.vue";
 import DiceRollModal from "./DiceRollModal.vue";
@@ -14,16 +14,27 @@ const props = withDefaults(
   defineProps<{
     round: number;
     phase: GamePhase;
+    screen?: GameScreen;
+    isNeighborhoodSetup?: boolean;
     hasBegun?: boolean;
   }>(),
   {
-    hasBegun: true,
+    screen: undefined,
+    isNeighborhoodSetup: undefined,
+    hasBegun: undefined,
   },
 );
 
+const isSetupGateActive = computed(() => {
+  if (props.isNeighborhoodSetup !== undefined) return props.isNeighborhoodSetup;
+  if (props.screen !== undefined) return props.screen === "neighborhood-setup";
+  if (props.hasBegun !== undefined) return !props.hasBegun;
+  return false;
+});
+
 const phaseClass = computed(() => {
-  if (!props.hasBegun) {
-    return "phase-pregame";
+  if (isSetupGateActive.value) {
+    return "phase-pregame phase-neighborhood-setup";
   }
   switch (props.phase) {
     case 1:
@@ -88,7 +99,7 @@ const dividerPaths = computed<PathInfo[]>(() => {
         <RoundTracker
           :round="round"
           :phase="phase"
-          :disabled="!hasBegun"
+          :disabled="isSetupGateActive"
           @next="emit('next-phase')"
           @prev="emit('prev-phase')"
           @select-phase="(p) => emit('select-phase', p)"
@@ -99,8 +110,8 @@ const dividerPaths = computed<PathInfo[]>(() => {
         <RoughButton
           variant="secondary"
           :seed="909"
-          :disabled="!hasBegun"
-          :title="!hasBegun ? 'Disabled until game begins' : 'Record dice roll'"
+          :disabled="isSetupGateActive"
+          :title="isSetupGateActive ? 'Disabled during neighborhood setup' : 'Record dice roll'"
           @click="isDiceModalOpen = true"
         >
           <span class="dice-btn-content">

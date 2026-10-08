@@ -1,13 +1,16 @@
+import { oklch } from "culori";
+import { colorDistance, muteColor } from "../colorTheory";
 import { roughGen, createSeed, type PathInfo } from "../rough";
 import type { BuildingBush, BuildingPlant } from "../../types/game";
 
 /**
  * Deterministic fallback plant setting for buildings lacking an explicit configuration.
+ * Enforces rarity: no more than 1 in 5 buildings has flowers (1/5) and no more than 1 in 5 has bushes (1/5).
  */
 export function getDefaultBuildingPlant(indexOrSeed: number | string): BuildingPlant {
   const seed = typeof indexOrSeed === "number" ? Math.abs(indexOrSeed) : createSeed(indexOrSeed);
   const mod = seed % 5;
-  if (mod === 1 || mod === 4) return "flower";
+  if (mod === 1) return "flower";
   if (mod === 3) return "bush";
   return "none";
 }
@@ -23,13 +26,13 @@ export const getDefaultBuildingBush = getDefaultBuildingPlant;
  * layered foliage masses in natural watercolor greens, perimeter scalloped ink arcs,
  * and sketchy interior leaf gestures.
  */
-export function generateBushPaths(seed: number, stroke: string, isOrganized = false): PathInfo[] {
+export function generateBushPaths(seed: number, stroke?: string, isOrganized = false): PathInfo[] {
   const s = seed;
   const paths: PathInfo[] = [];
 
   const mainStrokeWidth = isOrganized ? 1.6 : 1.25;
-  const inkColor = isOrganized ? stroke || "#153314" : "#1c3d1a";
-  const earthColor = stroke || "#383129";
+  const inkColor = isOrganized ? "#153314" : "#1c3d1a";
+  const earthColor = "#383129";
 
   // 1. Earth/ground baseline at y = 41
   const ground = roughGen.line(3, 41, 55, 41, {
@@ -191,19 +194,164 @@ export function generateBushPaths(seed: number, stroke: string, isOrganized = fa
   return paths;
 }
 
+export interface FlowerPalette {
+  name: string;
+  petal: string;
+  petalStroke: string;
+  center: string;
+  centerStroke: string;
+}
+
+export const FLOWER_PALETTES: readonly FlowerPalette[] = [
+  {
+    name: "gold",
+    petal: "#facc15",
+    petalStroke: "#b45309",
+    center: "#78350f",
+    centerStroke: "#451a03",
+  }, // Sunny gold daisy
+  {
+    name: "lavender",
+    petal: "#c084fc",
+    petalStroke: "#7c3aed",
+    center: "#fde047",
+    centerStroke: "#ca8a04",
+  }, // Lavender violet
+  {
+    name: "rose",
+    petal: "#fb7185",
+    petalStroke: "#be123c",
+    center: "#fef08a",
+    centerStroke: "#d97706",
+  }, // Soft rose pink
+  {
+    name: "marigold",
+    petal: "#fb923c",
+    petalStroke: "#c2410c",
+    center: "#fef08a",
+    centerStroke: "#b45309",
+  }, // Marigold amber
+  {
+    name: "cornflower",
+    petal: "#60a5fa",
+    petalStroke: "#1d4ed8",
+    center: "#fef08a",
+    centerStroke: "#d97706",
+  }, // Cornflower azure
+  {
+    name: "coral",
+    petal: "#f43f5e",
+    petalStroke: "#9f1239",
+    center: "#fef08a",
+    centerStroke: "#d97706",
+  }, // Coral poppy
+  {
+    name: "cream",
+    petal: "#fef08a",
+    petalStroke: "#ca8a04",
+    center: "#ea580c",
+    centerStroke: "#9a3412",
+  }, // Warm cream lily
+] as const;
+
+/**
+ * Picks a flower color palette that goes nicely and contrasts well with the building color.
+ * Prioritizes high perceptual contrast (Delta E) and distinct hue separation so blossoms pop
+ * and do not clash or blend into the building facade.
+ */
+export function pickFlowerPaletteForBuilding(buildingColor?: string, seed = 0): FlowerPalette {
+  if (!buildingColor) {
+    return FLOWER_PALETTES[Math.abs(seed) % FLOWER_PALETTES.length]!;
+  }
+
+  const bLch = oklch(buildingColor);
+  if (!bLch) {
+    return FLOWER_PALETTES[Math.abs(seed) % FLOWER_PALETTES.length]!;
+  }
+
+  const bHue = bLch.h ?? 0;
+
+  // Score each palette based on perceptual distance (Delta E) and hue separation
+  const scored = FLOWER_PALETTES.map((pal) => {
+    const fLch = oklch(pal.petal);
+    const fHue = fLch?.h ?? 0;
+    const dE = colorDistance(buildingColor, pal.petal);
+    const rawHueDiff = Math.abs(bHue - fHue);
+    const hueDiff = Math.min(rawHueDiff, 360 - rawHueDiff);
+    return { pal, dE, hueDiff };
+  });
+
+  // Filter candidates that have good Delta E and sufficient hue difference
+  // (avoiding flowers of the same hue family as the building)
+  const contrasting = scored.filter((c) => c.dE >= 0.2 && c.hueDiff >= 45);
+
+  if (contrasting.length > 0) {
+    return contrasting[Math.abs(seed) % contrasting.length]!.pal;
+  }
+
+  // Fallback: pick the palette with highest Delta E if no palette met both thresholds
+  scored.sort((a, b) => b.dE - a.dE);
+  return scored[0]!.pal;
+}
+
+export function resolveFlowerPalette(
+  seed: number,
+  flowerColor?: string,
+  buildingColor?: string,
+): FlowerPalette {
+  if (flowerColor) {
+    const found = FLOWER_PALETTES.find((p) => p.petal.toLowerCase() === flowerColor.toLowerCase());
+    if (found) {
+      if (buildingColor) {
+        const dE = colorDistance(buildingColor, found.petal);
+        if (dE >= 0.15) return found;
+        return pickFlowerPaletteForBuilding(buildingColor, seed);
+      }
+      return found;
+    }
+
+    if (buildingColor) {
+      const dE = colorDistance(buildingColor, flowerColor);
+      if (dE < 0.15) {
+        return pickFlowerPaletteForBuilding(buildingColor, seed);
+      }
+    }
+
+    return {
+      name: "custom",
+      petal: flowerColor,
+      petalStroke: muteColor(flowerColor, 0.7),
+      center: "#fef08a",
+      centerStroke: "#d97706",
+    };
+  }
+
+  if (buildingColor) {
+    return pickFlowerPaletteForBuilding(buildingColor, seed);
+  }
+
+  return FLOWER_PALETTES[Math.abs(seed) % FLOWER_PALETTES.length]!;
+}
+
 /**
  * Generates hand-drawn architectural SVG paths for an organic flowering plant in front of the house.
  * Dimensions: fits directly into the building card corner (viewBox 0 0 58 44).
  * Features: earth baseline, sketched soil mound, grass root anchors, curving stems, watercolor green leaves
  * with sketched veins, and vibrant multi-petal blossoms with bright center disks and blooming buds.
  */
-export function generateFlowerPaths(seed: number, stroke: string, isOrganized = false): PathInfo[] {
+export function generateFlowerPaths(
+  seed: number,
+  stroke?: string,
+  isOrganized = false,
+  flowerColor?: string,
+  buildingColor?: string,
+): PathInfo[] {
   const s = seed;
   const paths: PathInfo[] = [];
 
   const mainStrokeWidth = isOrganized ? 1.6 : 1.25;
-  const inkColor = isOrganized ? stroke || "#153314" : "#1c3d1a";
-  const earthColor = stroke || "#383129";
+  const inkColor = isOrganized ? "#153314" : "#1c3d1a";
+  const earthColor = "#383129";
 
   // 1. Earth/ground baseline at y = 41
   const ground = roughGen.line(4, 41, 54, 41, {
@@ -360,13 +508,7 @@ export function generateFlowerPaths(seed: number, stroke: string, isOrganized = 
   paths.push(...roughGen.toPaths(veinL), ...roughGen.toPaths(veinR));
 
   // 4. Color palettes
-  const palettes = [
-    { petal: "#fb7185", petalStroke: "#be123c", center: "#fef08a", centerStroke: "#d97706" },
-    { petal: "#facc15", petalStroke: "#b45309", center: "#78350f", centerStroke: "#451a03" },
-    { petal: "#c084fc", petalStroke: "#7c3aed", center: "#fde047", centerStroke: "#ca8a04" },
-    { petal: "#f43f5e", petalStroke: "#9f1239", center: "#fef08a", centerStroke: "#d97706" },
-  ];
-  const pal = palettes[Math.abs(s) % palettes.length]!;
+  const pal = resolveFlowerPalette(s, flowerColor, buildingColor);
 
   // Main center blossom at (28, 13)
   const cx = 28;
@@ -461,35 +603,6 @@ export function generateFlowerPaths(seed: number, stroke: string, isOrganized = 
   });
   paths.push(...roughGen.toPaths(rCenter));
 
-  // Tiny top budding accent at (34, 10)
-  const budStem = roughGen.line(28, 14, 34, 10, {
-    roughness: 0.25,
-    stroke: inkColor,
-    strokeWidth: 1.0,
-    seed: s + 80,
-  });
-  const budCalyx = roughGen.circle(34, 10, 4.0, {
-    roughness: 0.3,
-    stroke: inkColor,
-    strokeWidth: 0.8,
-    fill: "#48823c",
-    fillStyle: "solid",
-    seed: s + 81,
-  });
-  const budPetal = roughGen.circle(35.5, 8.5, 3.5, {
-    roughness: 0.35,
-    stroke: pal.petalStroke,
-    strokeWidth: 0.8,
-    fill: pal.petal,
-    fillStyle: "solid",
-    seed: s + 82,
-  });
-  paths.push(
-    ...roughGen.toPaths(budStem),
-    ...roughGen.toPaths(budCalyx),
-    ...roughGen.toPaths(budPetal),
-  );
-
   return paths;
 }
 
@@ -499,11 +612,13 @@ export function generateFlowerPaths(seed: number, stroke: string, isOrganized = 
 export function generatePlantPaths(
   plant: BuildingPlant | BuildingBush,
   seed: number,
-  stroke: string,
+  stroke?: string,
   isOrganized = false,
+  flowerColor?: string,
+  buildingColor?: string,
 ): PathInfo[] {
   if (plant === "flower") {
-    return generateFlowerPaths(seed, stroke, isOrganized);
+    return generateFlowerPaths(seed, stroke, isOrganized, flowerColor, buildingColor);
   }
   if (plant === "bush" || plant === "left" || plant === "right") {
     return generateBushPaths(seed, stroke, isOrganized);

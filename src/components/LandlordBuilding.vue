@@ -11,11 +11,13 @@ const props = withDefaults(
     landlordMoney?: number;
     canMove?: boolean;
     editBuildings?: boolean;
+    canEdit?: boolean;
   }>(),
   {
     landlordMoney: 0,
     canMove: true,
     editBuildings: undefined,
+    canEdit: undefined,
   },
 );
 
@@ -23,9 +25,11 @@ const emit = defineEmits<{
   (e: "pointerdown-drag", event: PointerEvent): void;
 }>();
 
-const isEditable = computed(() =>
-  props.editBuildings !== undefined ? props.editBuildings : props.canMove,
-);
+const isEditable = computed(() => {
+  if (props.canEdit !== undefined) return props.canEdit;
+  if (props.editBuildings !== undefined) return props.editBuildings;
+  return props.canMove ?? true;
+});
 
 function handleDragPointerDown(e: PointerEvent) {
   if (!isEditable.value) return;
@@ -391,8 +395,18 @@ const landlordFigurePaths = computed<PathInfo[]>(() => {
 }
 
 .corp-title {
-  font-family: inherit;
-  font-size: 0.68rem;
+  font-family:
+    "Outfit",
+    "Plus Jakarta Sans",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   color: #f8fafc;

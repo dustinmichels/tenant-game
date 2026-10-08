@@ -22,6 +22,7 @@ export interface Building {
   hasBalcony?: boolean;
   plant?: BuildingPlant;
   bush?: BuildingBush;
+  flowerColor?: string;
 }
 
 export interface RoundTally {
@@ -36,6 +37,7 @@ export interface RoundTally {
 }
 
 export type GamePhase = 1 | 2 | 3;
+export type GameScreen = "new-game" | "neighborhood-setup" | "gameplay";
 
 export interface PhaseInfo {
   id: GamePhase;
@@ -66,18 +68,18 @@ export const PHASES: readonly PhaseInfo[] = [
 ] as const;
 
 export const BUILDING_COLORS: readonly string[] = [
-  "#e11d48", // Rose Red
-  "#2563eb", // Royal Blue
-  "#059669", // Emerald Green
-  "#d97706", // Amber Gold
-  "#7c3aed", // Purple Violet
-  "#0891b2", // Ocean Teal
-  "#ea580c", // Bright Orange
-  "#db2777", // Vivid Magenta
-  "#4f46e5", // Indigo
-  "#16a34a", // Leaf Green
-  "#c026d3", // Fuchsia
-  "#ca8a04", // Deep Gold
+  "#c34f51", // Rose Red
+  "#3e6fc2", // Royal Blue
+  "#c4a032", // Sunny Gold
+  "#389560", // Emerald Green
+  "#805dc0", // Purple Violet
+  "#1d97a3", // Ocean Teal
+  "#cb6c30", // Terracotta Orange
+  "#af59b3", // Soft Fuchsia
+  "#86a152", // Sage Green
+  "#1384b7", // Azure Blue
+  "#ab366e", // Ruby Crimson
+  "#4d4fb0", // Cobalt Indigo
 ] as const;
 
 export interface CoalitionConnection {
@@ -152,6 +154,7 @@ export interface GameState {
   personScale?: number;
   landlordPosition?: { x: number; y: number };
   showLandlord?: boolean;
+  controlsCollapsed?: boolean;
 }
 
 export interface DynamicSizingResult {

@@ -14,6 +14,7 @@ const props = withDefaults(
     isInstigator?: boolean;
     inUnion?: boolean;
     isEvicted?: boolean;
+    isNeighborhoodSetup?: boolean;
     hasBegun?: boolean;
     hasBalcony?: boolean;
   }>(),
@@ -25,10 +26,18 @@ const props = withDefaults(
     isInstigator: false,
     inUnion: false,
     isEvicted: false,
+    isNeighborhoodSetup: undefined,
     hasBegun: true,
     hasBalcony: false,
   },
 );
+
+const isSetupGateActive = computed(() => {
+  if (props.isNeighborhoodSetup !== undefined) return props.isNeighborhoodSetup;
+  if (props.hasBegun !== undefined) return !props.hasBegun;
+  return false;
+});
+const isGameplayActive = computed(() => !isSetupGateActive.value);
 const emit = defineEmits<{
   (e: "select", event: MouseEvent): void;
 }>();
@@ -60,11 +69,15 @@ const windowPaths = computed<PathInfo[]>(() => {
 
 const balconyPaths = computed<PathInfo[]>(() => {
   if (!props.hasBalcony) return [];
-  return generateBalconyPaths(windowSeed.value + 40, "#5c4f3d", props.inUnion && props.hasBegun);
+  return generateBalconyPaths(
+    windowSeed.value + 40,
+    "#5c4f3d",
+    props.inUnion && isGameplayActive.value,
+  );
 });
 
 const tooltip = computed(() => {
-  if (!props.hasBegun) {
+  if (isSetupGateActive.value) {
     return `${props.label} (Resident)`;
   }
   const status = props.isEvicted
@@ -78,7 +91,7 @@ const tooltip = computed(() => {
 });
 
 function handleClick(e: MouseEvent) {
-  if (!props.hasBegun) return;
+  if (!isGameplayActive.value) return;
   emit("select", e);
 }
 </script>
@@ -87,14 +100,14 @@ function handleClick(e: MouseEvent) {
   <div
     class="building-window"
     :class="{
-      'is-instigator': isInstigator && hasBegun,
-      'is-union': inUnion && hasBegun,
-      'is-evicted': isEvicted && hasBegun,
-      'is-interactive': hasBegun,
+      'is-instigator': isInstigator && isGameplayActive,
+      'is-union': inUnion && isGameplayActive,
+      'is-evicted': isEvicted && isGameplayActive,
+      'is-interactive': isGameplayActive,
     }"
     :title="tooltip"
-    :role="hasBegun ? 'button' : undefined"
-    :tabindex="hasBegun ? 0 : -1"
+    :role="isGameplayActive ? 'button' : undefined"
+    :tabindex="isGameplayActive ? 0 : -1"
     @click="handleClick($event)"
     @contextmenu.prevent="handleClick($event)"
   >
@@ -116,10 +129,10 @@ function handleClick(e: MouseEvent) {
         :variant="variant"
         :label="label"
         :seed="seed"
-        :color="hasBegun ? color : undefined"
-        :is-instigator="hasBegun && isInstigator"
-        :in-union="hasBegun && inUnion"
-        :is-evicted="hasBegun && isEvicted"
+        :color="isGameplayActive ? color : undefined"
+        :is-instigator="isGameplayActive && isInstigator"
+        :in-union="isGameplayActive && inUnion"
+        :is-evicted="isGameplayActive && isEvicted"
       />
     </div>
 

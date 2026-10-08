@@ -63,13 +63,25 @@ function focusInput(index: number) {
 function syncRollFromInput(index: number) {
   const el = inputRefs.value[index];
   const item = rolls.value[index];
-  if (el && item && el.value !== "" && item.value === null) {
-    const num = Number(el.value);
-    if (!isNaN(num) && num >= 0) {
-      item.value = num;
+  if (el && item) {
+    if (el.value === "") {
+      item.value = null;
+    } else {
+      const num = Number(el.value);
+      if (!isNaN(num) && num >= 0) {
+        item.value = num;
+      }
     }
   }
 }
+
+function syncAllInputs() {
+  for (let i = 0; i < rolls.value.length; i++) {
+    syncRollFromInput(i);
+  }
+}
+
+const isDonePending = ref(false);
 function isRollEmpty(item: RollItem | undefined): boolean {
   if (!item) return true;
   return item.value === null || (item.value as unknown) === "" || isNaN(Number(item.value));
@@ -113,6 +125,7 @@ function pruneTrailingBoxes() {
 }
 
 function onRollInput(index: number) {
+  isDonePending.value = false;
   const item = rolls.value[index];
   if (!item) return;
 
@@ -124,22 +137,19 @@ function onRollInput(index: number) {
   }
 }
 
-function onEnter(index: number) {
-  syncRollFromInput(index);
-  if (index < rolls.value.length - 1) {
-    focusInput(index + 1);
+function requestDone() {
+  syncAllInputs();
+  if (validRollsCount.value === 0) return;
+
+  if (!isDonePending.value) {
+    isDonePending.value = true;
   } else {
-    const current = rolls.value[index];
-    if (isRollValidNumber(current)) {
-      ensureTrailingEmptyBox();
-      focusInput(rolls.value.length - 1);
-    } else if (validRollsCount.value > 0) {
-      handleDone();
-    }
+    handleDone();
   }
 }
 
 function onTab(index: number, e: KeyboardEvent) {
+  isDonePending.value = false;
   if (e.shiftKey) {
     if (index > 0) {
       e.preventDefault();
@@ -167,20 +177,34 @@ function handleBoxKeydown(index: number, e: KeyboardEvent) {
     e.preventDefault();
     return;
   }
-  if (e.key === "Backspace" && isRollEmpty(rolls.value[index]) && index > 0) {
-    e.preventDefault();
-    focusInput(index - 1);
-    return;
+  if (e.key === "Backspace") {
+    isDonePending.value = false;
+    if (isRollEmpty(rolls.value[index]) && index > 0) {
+      e.preventDefault();
+      focusInput(index - 1);
+      return;
+    }
   }
   if (e.key === "Enter") {
     e.preventDefault();
-    onEnter(index);
-  } else if (e.key === "Tab") {
-    onTab(index, e);
+    syncRollFromInput(index);
+    requestDone();
+    return;
   }
+  if (e.key === "Tab") {
+    onTab(index, e);
+    return;
+  }
+  isDonePending.value = false;
+}
+
+function handleBoxClick(index: number) {
+  isDonePending.value = false;
+  focusInput(index);
 }
 
 function addBox() {
+  isDonePending.value = false;
   const last = rolls.value[rolls.value.length - 1];
   if (last && isRollEmpty(last)) {
     focusInput(rolls.value.length - 1);
@@ -191,6 +215,7 @@ function addBox() {
 }
 
 function addQuickRoll(val: number) {
+  isDonePending.value = false;
   const emptyIndex = rolls.value.findIndex((r) => isRollEmpty(r));
   if (emptyIndex !== -1) {
     rolls.value[emptyIndex]!.value = val;
@@ -202,6 +227,7 @@ function addQuickRoll(val: number) {
 }
 
 function removeRoll(index: number) {
+  isDonePending.value = false;
   if (rolls.value.length > 1) {
     rolls.value.splice(index, 1);
     ensureTrailingEmptyBox();
@@ -213,13 +239,16 @@ function removeRoll(index: number) {
 }
 
 function reset() {
+  isDonePending.value = false;
   nextRollId = 1;
   rolls.value = [{ id: "roll-1", value: null }];
   focusInput(0);
 }
 
 function handleDone() {
+  syncAllInputs();
   if (validRollsCount.value === 0) return;
+  isDonePending.value = false;
   emit("done", total.value);
   emit("close");
 }
@@ -232,27 +261,48 @@ function handleModalKeydown(e: KeyboardEvent) {
   if (!props.show) return;
 
   if (e.key === "Escape") {
+    if (isDonePending.value) {
+      e.preventDefault();
+      isDonePending.value = false;
+      return;
+    }
     e.preventDefault();
     emit("close");
     return;
   }
 
-  if (e.key === "Enter" && !e.repeat && !e.isComposing && validRollsCount.value > 0) {
+  if (e.key === "Enter" && !e.repeat && !e.isComposing) {
     const target = e.target as HTMLElement | null;
-    if (target?.closest(".modal-close-btn") || target?.closest(".btn-cancel")) {
+    if (
+      target?.closest(".modal-close-btn") ||
+      target?.closest(".btn-cancel") ||
+      target?.closest(".quick-die-btn") ||
+      target?.closest(".add-box-btn") ||
+      target?.closest(".reset-rolls-btn") ||
+      target?.closest(".roll-box-remove-btn")
+    ) {
       return;
     }
-    if (e.ctrlKey || e.metaKey || !target?.closest(".roll-box-input")) {
-      e.preventDefault();
-      handleDone();
+    if (target?.closest(".roll-box-input")) {
+      return;
     }
+    e.preventDefault();
+    requestDone();
   }
 }
 
 useEventListener(window, "keydown", handleModalKeydown);
+
+watch(validRollsCount, (count) => {
+  if (count === 0) {
+    isDonePending.value = false;
+  }
+});
+
 watch(
   () => props.show,
   (isOpen) => {
+    isDonePending.value = false;
     if (isOpen) {
       reset();
     }
@@ -333,7 +383,7 @@ watch(
             <div class="rolls-section">
               <div class="rolls-section-header">
                 <span class="rolls-section-title">Individual Rolls</span>
-                <span class="rolls-hint">Boxes appear as you go &bull; Enter or Tab to next</span>
+                <span class="rolls-hint">Boxes appear as you go &bull; Tab to next</span>
               </div>
 
               <div class="rolls-grid" role="list">
@@ -343,7 +393,7 @@ watch(
                   class="roll-box"
                   :class="{ 'has-value': isRollValidNumber(roll) }"
                   role="listitem"
-                  @click="focusInput(index)"
+                  @click="handleBoxClick(index)"
                 >
                   <div class="roll-box-header">
                     <label :for="`roll-input-${roll.id}`" class="roll-box-label">
@@ -418,19 +468,30 @@ watch(
               </RoughButton>
 
               <RoughButton
-                variant="primary"
+                :variant="isDonePending ? 'warning' : 'primary'"
                 :seed="952"
                 :disabled="validRollsCount === 0"
                 class="btn-done"
-                title="Done (Enter)"
-                aria-label="Done (Press Enter)"
+                :class="{ 'is-highlighted': isDonePending }"
+                :title="isDonePending ? 'press again to mark as done' : 'Done (Enter)'"
+                :aria-label="isDonePending ? 'press again to mark as done' : 'Done (Press Enter)'"
                 @click="handleDone"
               >
                 <span class="btn-inner">
-                  <span class="btn-text">Done</span>
-                  <span v-if="validRollsCount > 0" class="done-badge">({{ total }})</span>
+                  <span class="btn-text">
+                    {{ isDonePending ? "press again to mark as done" : "Done" }}
+                  </span>
+                  <span v-if="!isDonePending && validRollsCount > 0" class="done-badge">
+                    ({{ total }})
+                  </span>
                 </span>
-                <kbd class="btn-kbd" :class="{ 'btn-kbd-disabled': validRollsCount === 0 }">
+                <kbd
+                  class="btn-kbd"
+                  :class="{
+                    'btn-kbd-disabled': validRollsCount === 0,
+                    'btn-kbd-highlighted': isDonePending,
+                  }"
+                >
                   <CornerDownLeft
                     :size="11"
                     :stroke-width="1.5"
@@ -880,6 +941,36 @@ watch(
 .btn-done {
   display: inline-flex;
   align-items: center;
+}
+.btn-done.is-highlighted {
+  position: relative;
+  outline: 2px solid #b45309;
+  outline-offset: 2px;
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 3px rgba(245, 158, 11, 0.4),
+    0 2px 8px rgba(180, 83, 9, 0.25);
+  animation: done-highlight-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes done-highlight-pulse {
+  0% {
+    box-shadow:
+      0 0 0 2px rgba(245, 158, 11, 0.3),
+      0 2px 6px rgba(180, 83, 9, 0.2);
+  }
+  100% {
+    box-shadow:
+      0 0 0 5px rgba(245, 158, 11, 0.6),
+      0 4px 12px rgba(180, 83, 9, 0.35);
+  }
+}
+
+.btn-kbd-highlighted {
+  color: #78350f !important;
+  background-color: #fef3c7 !important;
+  border-color: #b45309 !important;
+  box-shadow: 0 1px 0 #92400e !important;
 }
 
 .btn-kbd {

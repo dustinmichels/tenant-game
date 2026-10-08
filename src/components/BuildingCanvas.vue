@@ -10,6 +10,7 @@ import type {
   BuildingRoofType,
   BuildingBush,
   BuildingPlant,
+  GameScreen,
 } from "../types/game";
 import {
   clampBuildingPosition,
@@ -34,7 +35,8 @@ import LandlordBuilding from "./LandlordBuilding.vue";
 import TenantContextMenu from "./TenantContextMenu.vue";
 import TenantAdjustModal from "./TenantAdjustModal.vue";
 import BreakCoalitionModal from "./BreakCoalitionModal.vue";
-import { Cable, Scissors, X, ChevronDown, ChevronUp } from "lucide-vue-next";
+import DeleteBuildingModal from "./DeleteBuildingModal.vue";
+import { Cable, Scissors, X, Plus } from "lucide-vue-next";
 import RoughButton from "./RoughButton.vue";
 import RoughBox from "./RoughBox.vue";
 const canEdit = defineModel<boolean>("canEdit");
@@ -62,7 +64,23 @@ const isEditingBuildings = computed<boolean>({
   },
 });
 const showLandlord = defineModel<boolean>("showLandlord", { default: false });
-const actionsCollapsed = defineModel<boolean>("actionsCollapsed", { default: false });
+const controlsCollapsedModel = defineModel<boolean>("controlsCollapsed");
+const actionsCollapsedModel = defineModel<boolean>("actionsCollapsed");
+const internalControlsCollapsed = ref(false);
+
+const controlsCollapsed = computed<boolean>({
+  get: () => {
+    if (controlsCollapsedModel.value !== undefined) return controlsCollapsedModel.value;
+    if (actionsCollapsedModel.value !== undefined) return actionsCollapsedModel.value;
+    return internalControlsCollapsed.value;
+  },
+  set: (val: boolean) => {
+    if (controlsCollapsedModel.value !== undefined) controlsCollapsedModel.value = val;
+    if (actionsCollapsedModel.value !== undefined) actionsCollapsedModel.value = val;
+    internalControlsCollapsed.value = val;
+  },
+});
+const actionsCollapsed = controlsCollapsed;
 
 const props = withDefaults(
   defineProps<{
@@ -74,6 +92,8 @@ const props = withDefaults(
     landlordMoney?: number;
     landlordPosition?: { x: number; y: number };
     personWidth?: number;
+    screen?: GameScreen;
+    isNeighborhoodSetup?: boolean;
     hasBegun?: boolean;
   }>(),
   {
@@ -83,9 +103,34 @@ const props = withDefaults(
     buildingColorMap: () => ({}),
     landlordPosition: () => ({ x: 82, y: 3 }),
     personWidth: undefined,
+    screen: undefined,
+    isNeighborhoodSetup: undefined,
     hasBegun: true,
   },
 );
+
+const isSetupGateActive = computed(() => {
+  if (props.isNeighborhoodSetup !== undefined) return props.isNeighborhoodSetup;
+  if (props.screen !== undefined) return props.screen === "neighborhood-setup";
+  if (props.hasBegun !== undefined) return !props.hasBegun;
+  return false;
+});
+const isGameplayActive = computed(() => !isSetupGateActive.value);
+
+const isPlayMode = computed(() => {
+  if (props.screen !== undefined) return props.screen === "gameplay";
+  if (props.isNeighborhoodSetup !== undefined) return !props.isNeighborhoodSetup;
+  if (props.hasBegun !== undefined) return props.hasBegun;
+  return false;
+});
+
+watch([isGameplayActive, isPlayMode], ([gameplay, play], [prevGameplay, prevPlay]) => {
+  const isNowPlay = Boolean(gameplay || play);
+  const wasPlay = Boolean((prevGameplay ?? false) || (prevPlay ?? false));
+  if (isNowPlay && !wasPlay) {
+    controlsCollapsed.value = true;
+  }
+});
 
 const maxTenants = computed(() => {
   if (!props.buildings || props.buildings.length === 0) return props.defaultPeople || 8;
@@ -133,6 +178,8 @@ const emit = defineEmits<{
   (e: "disconnect-coalition", connectionId: string): void;
   (e: "disconnect-building", buildingId: string): void;
   (e: "undo-coalition"): void;
+  (e: "add-building"): void;
+  (e: "delete-building", buildingId: string): void;
 }>();
 const canvasRef = useTemplateRef<HTMLElement>("canvasRef");
 
@@ -441,7 +488,7 @@ const contextMenu = ref<{
 });
 
 function handleTenantSelect(payload: { event: MouseEvent; tenant: Tenant; building: Building }) {
-  if (!props.hasBegun) return;
+  if (!isGameplayActive.value) return;
   if (threadDrag.value.isClickConnecting && threadDrag.value.sourceBuilding) {
     if (payload.building.id !== threadDrag.value.sourceBuilding.id) {
       completeConnection(threadDrag.value.sourceBuilding, payload.building);
@@ -464,17 +511,17 @@ function closeContextMenu() {
 }
 
 function handleJoinUnion(tenant: Tenant, building: Building) {
-  if (!props.hasBegun) return;
+  if (!isGameplayActive.value) return;
   emit("toggle-union", building.id, tenant.id, true);
 }
 
 function handleLeaveUnion(tenant: Tenant, building: Building) {
-  if (!props.hasBegun) return;
+  if (!isGameplayActive.value) return;
   emit("toggle-union", building.id, tenant.id, false);
 }
 
 function handleToggleEviction(tenant: Tenant, building: Building, evicted: boolean) {
-  if (!props.hasBegun) return;
+  if (!isGameplayActive.value) return;
   emit("toggle-eviction", building.id, tenant.id, evicted);
 }
 
@@ -497,6 +544,34 @@ function handleOpenAdjustModal(building: Building) {
 function closeAdjustModal() {
   adjustModal.value.show = false;
   adjustModal.value.building = null;
+}
+const deleteModal = ref<{
+  show: boolean;
+  building: Building | null;
+}>({
+  show: false,
+  building: null,
+});
+
+function promptDeleteBuilding(building: Building) {
+  deleteModal.value = {
+    show: true,
+    building,
+  };
+}
+
+function closeDeleteModal() {
+  deleteModal.value.show = false;
+  deleteModal.value.building = null;
+}
+
+function handleConfirmDeleteBuilding(buildingId: string) {
+  emit("delete-building", buildingId);
+  closeDeleteModal();
+}
+
+function handleAddBuilding() {
+  emit("add-building");
 }
 
 function handleSaveAdjustTenants(
@@ -539,17 +614,20 @@ function setBuildingRef(buildingId: string, el: any) {
   }
 }
 
-const canvasDimensions = ref({ width: 1200, height: 800 });
+const canvasDimensions = ref({ width: 0, height: 0 });
 const pinPositions = ref<Record<string, { x: number; y: number }>>({});
 const buildingRects = ref<Record<string, BuildingRect>>({});
 
 function updatePinPositions() {
   const canvasEl = canvasRef.value;
   if (!canvasEl) return;
+  if (canvasEl.scrollLeft !== 0) {
+    canvasEl.scrollLeft = 0;
+  }
   const canvasRect = canvasEl.getBoundingClientRect();
-  const scrollW = Math.max(canvasEl.scrollWidth, canvasRect.width);
-  const scrollH = Math.max(canvasEl.scrollHeight, canvasRect.height);
-  canvasDimensions.value = { width: scrollW, height: scrollH };
+  const canvasW = canvasEl.clientWidth || canvasRect.width;
+  const scrollH = Math.max(canvasEl.scrollHeight, canvasEl.clientHeight, canvasRect.height);
+  canvasDimensions.value = { width: canvasW, height: scrollH };
 
   const nextPositions: Record<string, { x: number; y: number }> = {};
   const nextRects: Record<string, BuildingRect> = {};
@@ -588,7 +666,7 @@ function updatePinPositions() {
         };
       }
     } else {
-      const est = getEstimatedBuildingRect(building.x, building.y, scrollW, scrollH);
+      const est = getEstimatedBuildingRect(building.x, building.y, canvasW, scrollH);
       nextRects[building.id] = est;
       nextPositions[building.id] = {
         x: est.x2 - 10,
@@ -649,7 +727,10 @@ watch(effectivePersonWidth, () => {
   nextTick(updatePinPositions);
   setTimeout(updatePinPositions, 200);
 });
-watch(isEditingBuildings, () => {
+watch(isEditingBuildings, (val) => {
+  if (!val) {
+    showLandlord.value = false;
+  }
   nextTick(updatePinPositions);
   setTimeout(updatePinPositions, 60);
 });
@@ -696,7 +777,7 @@ let startPointerClientX = 0;
 let startPointerClientY = 0;
 
 function handleStartThread(building: Building, e: PointerEvent) {
-  if (!props.hasBegun) return;
+  if (!isGameplayActive.value) return;
   if (e.button !== 0) return;
   e.stopPropagation();
   e.preventDefault();
@@ -787,8 +868,8 @@ function onThreadPointerMove(moveEvent: PointerEvent) {
       getEstimatedBuildingRect(
         target.x,
         target.y,
-        canvasDimensions.value.width,
-        canvasDimensions.value.height,
+        canvasDimensions.value.width || 1050,
+        canvasDimensions.value.height || 750,
       );
     const edgePt = getNearestEdgePointOnRect(
       threadDrag.value.sourceX,
@@ -834,7 +915,7 @@ function onThreadPointerUp(upEvent: PointerEvent) {
 }
 
 function completeConnection(source: Building, target: Building) {
-  if (!props.hasBegun) return;
+  if (!isGameplayActive.value) return;
   emit("connect-coalition", source.id, target.id);
   showToast(`Coalition formed: ${source.label} + ${target.label}!`, true);
   cancelThreadDrag();
@@ -857,7 +938,7 @@ function cancelThreadDrag() {
 }
 
 function handleBuildingSlotClick(building: Building) {
-  if (!props.hasBegun) return;
+  if (!isGameplayActive.value) return;
   if (threadDrag.value.isClickConnecting && threadDrag.value.sourceBuilding) {
     if (building.id !== threadDrag.value.sourceBuilding.id) {
       completeConnection(threadDrag.value.sourceBuilding, building);
@@ -899,8 +980,8 @@ const renderedThreads = computed<RenderedThread[]>(() => {
     buildingsMap.set(b.id, b);
   }
 
-  const canvasW = canvasDimensions.value.width;
-  const canvasH = canvasDimensions.value.height;
+  const canvasW = canvasDimensions.value.width || 1050;
+  const canvasH = canvasDimensions.value.height || 750;
 
   for (const conn of connections) {
     const b1 = buildingsMap.get(conn.sourceId);
@@ -1036,8 +1117,8 @@ function getBuildingCoalitionNames(buildingId: string): string {
       <svg
         class="coalition-threads-layer"
         :style="{
-          width: `${canvasDimensions.width}px`,
-          height: `${canvasDimensions.height}px`,
+          width: '100%',
+          height: canvasDimensions.height ? `${canvasDimensions.height}px` : '100%',
         }"
         aria-label="Coalition threads layer"
       >
@@ -1145,6 +1226,7 @@ function getBuildingCoalitionNames(buildingId: string): string {
         </transition>
         <LandlordBuilding
           :landlord-money="landlordMoney"
+          :can-edit="isEditingBuildings"
           :can-move="isEditingBuildings"
           :edit-buildings="isEditingBuildings"
           @pointerdown-drag="handleLandlordPointerDownDrag"
@@ -1192,13 +1274,17 @@ function getBuildingCoalitionNames(buildingId: string): string {
           :is-connecting-source="threadDrag.sourceBuilding?.id === building.id"
           :is-connecting-target="threadDrag.targetBuilding?.id === building.id"
           :person-width="effectivePersonWidth"
+          :can-edit="isEditingBuildings"
           :can-move="isEditingBuildings"
           :edit-buildings="isEditingBuildings"
-          :has-begun="hasBegun"
+          :screen="screen"
+          :is-neighborhood-setup="isSetupGateActive"
+          :has-begun="isGameplayActive"
           @tenant-select="handleTenantSelect"
           @adjust-tenants="handleOpenAdjustModal"
           @pointerdown-drag="handlePointerDownDrag"
           @start-thread="handleStartThread"
+          @delete-building="promptDeleteBuilding"
         />
       </div>
 
@@ -1234,8 +1320,19 @@ function getBuildingCoalitionNames(buildingId: string): string {
         @close="closeBreakModal"
         @confirm="handleConfirmBreakCoalition"
       />
-      <!-- Bottom Corner: Actions Box -->
-      <div class="canvas-actions-panel" role="region" aria-label="Canvas Actions">
+      <!-- Modal for Delete Building Confirmation -->
+      <DeleteBuildingModal
+        :show="deleteModal.show"
+        :building="deleteModal.building"
+        @close="closeDeleteModal"
+        @confirm="handleConfirmDeleteBuilding"
+      />
+      <!-- Bottom Corner: Edit Mode Panel -->
+      <div
+        class="canvas-controls-panel canvas-edit-panel"
+        role="region"
+        aria-label="Edit Mode Controls"
+      >
         <RoughBox
           :stroke="'#786b59'"
           :fill="'#fcfaf6'"
@@ -1244,62 +1341,57 @@ function getBuildingCoalitionNames(buildingId: string): string {
           :bowing="0.3"
           :stroke-width="1.4"
           :seed="905"
-          class="canvas-actions-box"
+          class="canvas-controls-box canvas-edit-box"
         >
-          <div class="canvas-actions-inner" :class="{ 'is-collapsed': actionsCollapsed }">
-            <button
-              type="button"
-              class="actions-header"
-              :class="{ 'is-collapsed': actionsCollapsed }"
-              :aria-expanded="!actionsCollapsed"
-              aria-controls="canvas-actions-items"
-              :title="actionsCollapsed ? 'Expand actions' : 'Collapse actions'"
-              @click="actionsCollapsed = !actionsCollapsed"
-            >
-              <span class="actions-title">Actions</span>
-              <span class="actions-toggle-icon" aria-hidden="true">
-                <ChevronUp v-if="actionsCollapsed" :size="13" :stroke-width="2" />
-                <ChevronDown v-else :size="13" :stroke-width="2" />
+          <div class="canvas-edit-inner" :class="{ 'is-editing': isEditingBuildings }">
+            <!-- Extra controls revealed only when Edit mode is ON (anchored above) -->
+            <transition name="edit-pop">
+              <div v-if="isEditingBuildings" class="edit-mode-details">
+                <!-- Add a building button -->
+                <button
+                  type="button"
+                  class="controls-add-building-btn"
+                  title="Add a building"
+                  aria-label="Add a building"
+                  @click="handleAddBuilding"
+                >
+                  <span class="plus-circle-icon" aria-hidden="true">
+                    <Plus :size="14" :stroke-width="2.5" />
+                  </span>
+                  <span class="btn-label">Add a building</span>
+                </button>
+
+                <!-- Show landlord toggle -->
+                <label class="show-landlord-toggle" :class="{ 'is-active': showLandlord }">
+                  <input
+                    v-model="showLandlord"
+                    type="checkbox"
+                    role="switch"
+                    :aria-checked="showLandlord"
+                    class="toggle-input sr-only"
+                  />
+                  <span class="toggle-switch" aria-hidden="true">
+                    <span class="toggle-knob" />
+                  </span>
+                  <span class="toggle-label">Show landlord</span>
+                </label>
+              </div>
+            </transition>
+
+            <!-- Edit mode primary toggle (pinned to the bottom) -->
+            <label class="edit-mode-toggle" :class="{ 'is-active': isEditingBuildings }">
+              <input
+                v-model="isEditingBuildings"
+                type="checkbox"
+                role="switch"
+                :aria-checked="isEditingBuildings"
+                class="toggle-input sr-only"
+              />
+              <span class="toggle-switch" aria-hidden="true">
+                <span class="toggle-knob" />
               </span>
-            </button>
-
-            <div v-show="!actionsCollapsed" id="canvas-actions-items" class="actions-items">
-              <!-- Can edit toggle -->
-              <label
-                class="can-edit-toggle edit-buildings-toggle can-move-toggle"
-                :class="{ 'is-active': isEditingBuildings }"
-              >
-                <input
-                  type="checkbox"
-                  role="switch"
-                  v-model="isEditingBuildings"
-                  :aria-checked="isEditingBuildings"
-                  class="toggle-input sr-only"
-                />
-                <span class="toggle-switch" aria-hidden="true">
-                  <span class="toggle-knob" />
-                </span>
-                <span class="toggle-label">Can edit</span>
-              </label>
-
-              <!-- Show landlord toggle -->
-              <label
-                class="can-move-toggle show-landlord-toggle"
-                :class="{ 'is-active': showLandlord }"
-              >
-                <input
-                  v-model="showLandlord"
-                  type="checkbox"
-                  role="switch"
-                  :aria-checked="showLandlord"
-                  class="toggle-input sr-only"
-                />
-                <span class="toggle-switch" aria-hidden="true">
-                  <span class="toggle-knob" />
-                </span>
-                <span class="toggle-label">Show landlord</span>
-              </label>
-            </div>
+              <span class="toggle-label">Edit mode</span>
+            </label>
           </div>
         </RoughBox>
       </div>
@@ -1368,7 +1460,8 @@ function getBuildingCoalitionNames(buildingId: string): string {
   width: 100%;
   min-height: calc(100vh - 65px);
   height: 100%;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   background-color: #f7f2e9;
   background-image: radial-gradient(#d3c8b4 1.2px, transparent 1.2px);
   background-size: 24px 24px;
@@ -1396,7 +1489,8 @@ function getBuildingCoalitionNames(buildingId: string): string {
   outline-offset: 4px;
 }
 
-/* Bottom Corner: Canvas Actions Panel */
+/* Bottom Corner: Canvas Controls Panel */
+.canvas-controls-panel,
 .canvas-actions-panel {
   position: absolute;
   bottom: 20px;
@@ -1406,87 +1500,56 @@ function getBuildingCoalitionNames(buildingId: string): string {
   user-select: none;
 }
 
+.canvas-controls-box,
 .canvas-actions-box {
   filter: drop-shadow(0 3px 10px rgba(0, 0, 0, 0.12));
 }
 
+.canvas-edit-inner,
+.canvas-controls-inner,
 .canvas-actions-inner {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px 12px 10px 12px;
-  min-width: 175px;
-}
-
-.canvas-actions-inner.is-collapsed {
-  min-width: 110px;
   gap: 0;
-  padding: 6px 10px;
+  padding: 6px 12px;
+  width: 156px;
+  box-sizing: border-box;
+  transition: padding 0.18s ease;
 }
 
-.actions-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  background: transparent;
-  border: none;
-  border-bottom: 1px dashed #d6cebf;
-  padding: 0 0 4px 0;
-  margin: 0;
-  cursor: pointer;
-  color: #786b59;
-  font: inherit;
-  user-select: none;
-  border-radius: 2px;
-  transition: color 0.15s ease;
+.canvas-edit-inner.is-editing {
+  width: 156px;
+  gap: 8px;
+  padding: 8px 12px 6px 12px;
 }
 
-.actions-header:hover {
-  color: #44403c;
-}
-
-.actions-header:hover .actions-title {
-  color: #44403c;
-}
-
-.actions-header:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
-}
-
-.actions-header.is-collapsed {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.actions-toggle-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  color: inherit;
-}
-
-.actions-title {
-  font-size: 0.68rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #786b59;
-  transition: color 0.15s ease;
-}
-
-.actions-items {
+.edit-mode-details {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  border-bottom: 1px dashed #d6cebf;
+  padding-bottom: 8px;
+  margin-bottom: 2px;
 }
 
-/* Can Edit / Edit Buildings / Can Move Toggle */
+.edit-pop-enter-active,
+.edit-pop-leave-active {
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.edit-pop-enter-from,
+.edit-pop-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* Edit mode / Show landlord / General toggles */
+.edit-mode-toggle,
+.show-landlord-toggle,
 .can-edit-toggle,
 .edit-buildings-toggle,
 .can-move-toggle {
+  display: flex;
   align-items: center;
   gap: 9px;
   cursor: pointer;
@@ -1522,6 +1585,8 @@ function getBuildingCoalitionNames(buildingId: string): string {
     border-color 0.18s ease;
 }
 
+.edit-mode-toggle:hover .toggle-switch,
+.show-landlord-toggle:hover .toggle-switch,
 .can-edit-toggle:hover .toggle-switch,
 .edit-buildings-toggle:hover .toggle-switch,
 .can-move-toggle:hover .toggle-switch {
@@ -1529,6 +1594,8 @@ function getBuildingCoalitionNames(buildingId: string): string {
   background-color: #c9bfaf;
 }
 
+.edit-mode-toggle.is-active .toggle-switch,
+.show-landlord-toggle.is-active .toggle-switch,
 .can-edit-toggle.is-active .toggle-switch,
 .edit-buildings-toggle.is-active .toggle-switch,
 .can-move-toggle.is-active .toggle-switch {
@@ -1536,6 +1603,8 @@ function getBuildingCoalitionNames(buildingId: string): string {
   border-color: #14532d;
 }
 
+.edit-mode-toggle.is-active:hover .toggle-switch,
+.show-landlord-toggle.is-active:hover .toggle-switch,
 .can-edit-toggle.is-active:hover .toggle-switch,
 .edit-buildings-toggle.is-active:hover .toggle-switch,
 .can-move-toggle.is-active:hover .toggle-switch {
@@ -1556,6 +1625,8 @@ function getBuildingCoalitionNames(buildingId: string): string {
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+.edit-mode-toggle.is-active .toggle-knob,
+.show-landlord-toggle.is-active .toggle-knob,
 .can-edit-toggle.is-active .toggle-knob,
 .edit-buildings-toggle.is-active .toggle-knob,
 .can-move-toggle.is-active .toggle-knob {
@@ -1567,6 +1638,50 @@ function getBuildingCoalitionNames(buildingId: string): string {
   font-weight: 700;
   color: #292524;
   letter-spacing: -0.01em;
+}
+
+.controls-add-building-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background-color: #f0fdf4;
+  border: 1.5px solid #16a34a;
+  border-radius: 6px;
+  color: #15803d;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-top: 4px;
+  box-shadow: 0 1px 3px rgba(22, 163, 74, 0.12);
+}
+
+.controls-add-building-btn:hover {
+  background-color: #dcfce7;
+  border-color: #15803d;
+  color: #14532d;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(22, 163, 74, 0.2);
+}
+
+.controls-add-building-btn:active {
+  transform: translateY(0);
+  background-color: #bbf7d0;
+}
+
+.plus-circle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: #16a34a;
+  color: #ffffff;
+  flex-shrink: 0;
 }
 
 /* Spatial placement of residential buildings */
@@ -1672,12 +1787,12 @@ function getBuildingCoalitionNames(buildingId: string): string {
   align-items: center;
   gap: 8px;
   padding: 8px 18px;
-  background-color: #dbeafe;
-  border: 1.5px solid #3b82f6;
+  background-color: #fefdfa;
+  border: 1.5px solid #a8a29e;
   border-radius: 8px;
-  color: #1e40af;
+  color: #292524;
   font-size: 0.85rem;
-  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 4px 14px rgba(41, 37, 36, 0.12);
   max-width: 100%;
 }
 
@@ -1685,7 +1800,7 @@ function getBuildingCoalitionNames(buildingId: string): string {
   background: none;
   border: none;
   padding: 0;
-  color: #1d4ed8;
+  color: #b91c1c;
   text-decoration: underline;
   cursor: pointer;
   font-weight: 700;
@@ -1693,7 +1808,7 @@ function getBuildingCoalitionNames(buildingId: string): string {
 }
 
 .cancel-link-btn:hover {
-  color: #1e3a8a;
+  color: #991b1b;
 }
 
 /* Toast Notification (Bottom Center) */
@@ -1778,6 +1893,7 @@ function getBuildingCoalitionNames(buildingId: string): string {
   position: absolute;
   top: 0;
   left: 0;
+  width: 100%;
   pointer-events: none;
   z-index: 12;
   overflow: visible;

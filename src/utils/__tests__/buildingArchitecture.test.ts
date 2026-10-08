@@ -10,6 +10,8 @@ import {
   generateBushPaths,
   generateFlowerPaths,
   generatePlantPaths,
+  pickFlowerPaletteForBuilding,
+  FLOWER_PALETTES,
   ROOF_HEIGHT_FLAT,
   ROOF_HEIGHT_FLAT_CHAIRS,
   ROOF_HEIGHT_PITCHED,
@@ -36,16 +38,16 @@ describe("buildingArchitecture utility", () => {
     expect(getDefaultBuildingPlant(1)).toBe("flower");
     expect(getDefaultBuildingPlant(2)).toBe("none");
     expect(getDefaultBuildingPlant(3)).toBe("bush");
-    expect(getDefaultBuildingPlant(4)).toBe("flower");
+    expect(getDefaultBuildingPlant(4)).toBe("none");
     expect(getDefaultBuildingPlant(5)).toBe("none");
     expect(getDefaultBuildingBush(1)).toBe("flower");
     expect(getDefaultBuildingBush(2)).toBe("none");
     expect(getDefaultBuildingBush(3)).toBe("bush");
-    expect(getDefaultBuildingBush(4)).toBe("flower");
+    expect(getDefaultBuildingBush(4)).toBe("none");
     expect(getDefaultBuildingBush(5)).toBe("none");
   });
 
-  it("enforces rarity: no more than 1 bush and no more than 2 flowers per 5 houses", () => {
+  it("enforces rarity: no more than 1 bush and no more than 1 flower per 5 houses", () => {
     // Check sliding windows of 5 across 50 houses
     const totalHouses = 50;
     const plants = Array.from({ length: totalHouses }, (_, i) => getDefaultBuildingPlant(i + 1));
@@ -56,7 +58,7 @@ describe("buildingArchitecture utility", () => {
       const flowerCount = window.filter((p) => p === "flower").length;
 
       expect(bushCount).toBeLessThanOrEqual(1);
-      expect(flowerCount).toBeLessThanOrEqual(2);
+      expect(flowerCount).toBeLessThanOrEqual(1);
     }
   });
   it("generates valid SVG paths for pitched roof", () => {
@@ -81,12 +83,17 @@ describe("buildingArchitecture utility", () => {
     }
   });
 
-  it("generates valid SVG paths for flat roof", () => {
-    const paths = generateRoofPaths("flat", 180, 16, 300, "#e11d48", false);
-    expect(paths.length).toBeGreaterThan(0);
-    for (const p of paths) {
-      expect(typeof p.d).toBe("string");
-      expect(p.d.length).toBeGreaterThan(0);
+  it("generates valid SVG paths for flat roof across all feature variants", () => {
+    // 300 % 3 === 0: Chimney
+    // 301 % 3 === 1: Water tank
+    // 302 % 3 === 2: Industrial HVAC unit
+    for (const seed of [300, 301, 302]) {
+      const paths = generateRoofPaths("flat", 180, 16, seed, "#e11d48", false);
+      expect(paths.length).toBeGreaterThan(0);
+      for (const p of paths) {
+        expect(typeof p.d).toBe("string");
+        expect(p.d.length).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -129,6 +136,19 @@ describe("buildingArchitecture utility", () => {
       expect(p.d.length).toBeGreaterThan(0);
     }
   });
+  it("keeps botanical green strokes for flowers when building is organized", () => {
+    const paths = generateFlowerPaths(500, "#00a8e8", true);
+    const strokes = paths.map((p) => p.stroke);
+    expect(strokes).not.toContain("#00a8e8");
+    expect(strokes).toContain("#153314");
+  });
+
+  it("keeps botanical green strokes for bushes when building is organized", () => {
+    const paths = generateBushPaths(500, "#00a8e8", true);
+    const strokes = paths.map((p) => p.stroke);
+    expect(strokes).not.toContain("#00a8e8");
+    expect(strokes).toContain("#153314");
+  });
 
   it("generates correct paths via generatePlantPaths", () => {
     const flowerPaths = generatePlantPaths("flower", 500, "#3f382f", false);
@@ -147,5 +167,36 @@ describe("buildingArchitecture utility", () => {
       expect(typeof p.d).toBe("string");
       expect(p.d.length).toBeGreaterThan(0);
     }
+  });
+
+  it("picks a contrasting flower color palette for various building colors", () => {
+    const redBuilding = "#c4545d"; // Warm red hue
+    const blueBuilding = "#456fc3"; // Royal blue hue
+    const amberBuilding = "#c48452"; // Amber gold hue
+
+    const redFlower = pickFlowerPaletteForBuilding(redBuilding, 1);
+    // Red building must not get a red/coral flower
+    expect(["gold", "lavender", "cornflower", "cream"]).toContain(redFlower.name);
+
+    const blueFlower = pickFlowerPaletteForBuilding(blueBuilding, 1);
+    // Blue building must not get a blue/cornflower flower
+    expect(["gold", "rose", "marigold", "coral", "cream"]).toContain(blueFlower.name);
+
+    const amberFlower = pickFlowerPaletteForBuilding(amberBuilding, 1);
+    // Amber building must not get amber/gold/marigold flower
+    expect(["lavender", "cornflower"]).toContain(amberFlower.name);
+  });
+
+  it("uses contrasting flower colors in generateFlowerPaths and generatePlantPaths", () => {
+    const redBuilding = "#c4545d";
+    const flowerPaths = generateFlowerPaths(500, "#3f382f", false, undefined, redBuilding);
+    expect(flowerPaths.length).toBeGreaterThan(0);
+
+    const plantPaths = generatePlantPaths("flower", 500, "#3f382f", false, undefined, redBuilding);
+    expect(plantPaths.length).toBeGreaterThan(0);
+    // Verify fill colors contain the selected contrasting petal fill
+    const fills = plantPaths.map((p) => p.fill).filter(Boolean);
+    const redFlower = pickFlowerPaletteForBuilding(redBuilding, 500);
+    expect(fills).toContain(redFlower.petal);
   });
 });

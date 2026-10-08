@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from "bun:test";
 import { setActivePinia, createPinia } from "pinia";
 import { useGameStore } from "../game";
 import type { Tenant } from "../../types/game";
+import { colorDistance } from "../../utils/colorTheory";
 
 describe("game store phase navigation", () => {
   beforeEach(() => {
@@ -313,5 +314,217 @@ describe("game store building architectural variety", () => {
     // Try to reduce to 0
     store.adjustBuildingTenants(b1.id, 0);
     expect(b1.tenants.length).toBe(3);
+  });
+});
+
+describe("game flow and neighborhood setup gate", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    if (typeof localStorage !== "undefined") {
+      localStorage.clear();
+    }
+  });
+
+  it("follows the exact flow: new game screen -> neighborhood setup screen -> gameplay", () => {
+    const store = useGameStore();
+
+    // 1. Initial state: new game screen
+    expect(store.currentScreen).toBe("new-game");
+    expect(store.isNewGameScreen).toBe(true);
+    expect(store.isNeighborhoodSetup).toBe(false);
+    expect(store.isGameplay).toBe(false);
+
+    // 2. Setup game: transitions to neighborhood setup screen
+    store.setupGame(3, 6);
+    expect(store.currentScreen).toBe("neighborhood-setup");
+    expect(store.isNewGameScreen).toBe(false);
+    expect(store.isNeighborhoodSetup).toBe(true);
+    expect(store.isGameplay).toBe(false);
+    // In neighborhood setup screen: "can edit" is turned on
+    expect(store.canEdit).toBe(true);
+    expect(store.isEditBuildings).toBe(true);
+    expect(store.isEditPosition).toBe(true);
+    expect(store.controlsCollapsed).toBe(false);
+
+    // 3. Begin game: transitions to gameplay
+    store.beginGame();
+    expect(store.currentScreen).toBe("gameplay");
+    expect(store.isNewGameScreen).toBe(false);
+    expect(store.isNeighborhoodSetup).toBe(false);
+    expect(store.isGameplay).toBe(true);
+    // In gameplay: "can edit" is turned off
+    expect(store.canEdit).toBe(false);
+    expect(store.isEditBuildings).toBe(false);
+    expect(store.isEditPosition).toBe(false);
+    expect(store.controlsCollapsed).toBe(true);
+  });
+
+  it("supports opening and cancelling new game from gameplay and neighborhood setup", () => {
+    const store = useGameStore();
+
+    // Setup and enter gameplay
+    store.setupGame(3, 6);
+    store.beginGame();
+    expect(store.currentScreen).toBe("gameplay");
+
+    // Open new game screen from gameplay
+    store.openNewGame();
+    expect(store.currentScreen).toBe("new-game");
+    expect(store.isNewGameScreen).toBe(true);
+
+    // Cancel returns to gameplay
+    store.cancelNewGame();
+    expect(store.currentScreen).toBe("gameplay");
+    expect(store.isGameplay).toBe(true);
+
+    // Now test opening and cancelling from neighborhood setup
+    store.setupGame(2, 4);
+    expect(store.currentScreen).toBe("neighborhood-setup");
+
+    store.openNewGame();
+    expect(store.currentScreen).toBe("new-game");
+
+    store.cancelNewGame();
+    expect(store.currentScreen).toBe("neighborhood-setup");
+    expect(store.isNeighborhoodSetup).toBe(true);
+  });
+
+  it("collapses controls when game state transitions into play mode", () => {
+    const store = useGameStore();
+    store.setupGame(4, 8);
+    expect(store.currentScreen).toBe("neighborhood-setup");
+    expect(store.controlsCollapsed).toBe(false);
+
+    // Transition to play mode
+    store.beginGame();
+    expect(store.currentScreen).toBe("gameplay");
+    expect(store.controlsCollapsed).toBe(true);
+
+    // Can still be manually expanded and collapsed
+    store.controlsCollapsed = false;
+    expect(store.controlsCollapsed).toBe(false);
+    store.controlsCollapsed = true;
+    expect(store.controlsCollapsed).toBe(true);
+
+    // Setting up a new game resets controlsCollapsed to false for neighborhood setup
+    store.setupGame(3, 6);
+    expect(store.currentScreen).toBe("neighborhood-setup");
+    expect(store.controlsCollapsed).toBe(false);
+  });
+});
+
+describe("building generation plant distribution and flower colors", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    if (typeof localStorage !== "undefined") {
+      localStorage.clear();
+    }
+  });
+
+  it("enforces no more than 1/5 flowers and 1/5 bushes in initial creation", () => {
+    const store = useGameStore();
+    store.setupGame(20, 4);
+
+    const flowerBuildings = store.buildings.filter((b) => b.plant === "flower");
+    const bushBuildings = store.buildings.filter((b) => b.plant === "bush");
+
+    // Out of 20 buildings: exactly 4 flowers (1/5) and 4 bushes (1/5)
+    expect(flowerBuildings.length).toBeLessThanOrEqual(4);
+    expect(bushBuildings.length).toBeLessThanOrEqual(4);
+    expect(flowerBuildings.length).toBe(4);
+    expect(bushBuildings.length).toBe(4);
+  });
+
+  it("assigns a contrasting flower color to buildings generated with flowers", () => {
+    const store = useGameStore();
+    store.setupGame(15, 4);
+
+    const flowerBuildings = store.buildings.filter((b) => b.plant === "flower");
+    expect(flowerBuildings.length).toBeGreaterThan(0);
+
+    for (const b of flowerBuildings) {
+      expect(typeof b.flowerColor).toBe("string");
+      expect(b.flowerColor!.length).toBeGreaterThan(0);
+      // Perceptual distance between flower petal and building color must be significant
+      const distance = colorDistance(b.color, b.flowerColor!);
+      expect(distance).toBeGreaterThanOrEqual(0.18);
+    }
+  });
+
+  it("updates flower color when building color or plant is adjusted", () => {
+    const store = useGameStore();
+    store.setupGame(5, 4);
+
+    const b2 = store.buildings[1]!; // index 2 (initially plant: "none")
+    expect(b2.plant).toBe("none");
+    expect(b2.flowerColor).toBeUndefined();
+
+    // Adjust b2 to have a flower with a deep blue building color
+    store.adjustBuildingTenants(b2.id, 4, undefined, "#456fc3", undefined, undefined, "flower");
+    expect(b2.plant).toBe("flower");
+    expect(typeof b2.flowerColor).toBe("string");
+    // Flower on blue building should contrast and not be blue
+    expect(colorDistance(b2.color, b2.flowerColor!)).toBeGreaterThanOrEqual(0.2);
+
+    // Now change b2's color to scarlet red
+    const prevFlowerColor = b2.flowerColor;
+    store.adjustBuildingTenants(b2.id, 4, undefined, "#c4545d");
+    expect(b2.flowerColor).toBeDefined();
+    // Must maintain contrast with red building
+    expect(colorDistance(b2.color, b2.flowerColor!)).toBeGreaterThanOrEqual(0.2);
+  });
+});
+describe("adding and deleting buildings", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+  });
+
+  it("adds a new building with default number of people", () => {
+    const store = useGameStore();
+    store.setupGame(3, 8);
+    expect(store.buildings.length).toBe(3);
+    expect(store.buildingCount).toBe(3);
+
+    const newBuilding = store.addBuilding();
+    expect(store.buildings.length).toBe(4);
+    expect(store.buildingCount).toBe(4);
+    expect(newBuilding.tenants.length).toBe(8);
+
+    // Has exactly 1 instigator who is in union
+    const instigators = newBuilding.tenants.filter((t) => t.isInstigator);
+    expect(instigators.length).toBe(1);
+    expect(instigators[0]!.inUnion).toBe(true);
+
+    // Position is within canvas bounds
+    expect(newBuilding.x).toBeGreaterThanOrEqual(2);
+    expect(newBuilding.x).toBeLessThanOrEqual(84);
+    expect(newBuilding.y).toBeGreaterThanOrEqual(2);
+    expect(newBuilding.y).toBeLessThanOrEqual(72);
+  });
+
+  it("deletes a building and cleans up its coalition connections", () => {
+    const store = useGameStore();
+    store.setupGame(4, 6);
+    store.beginGame();
+
+    const b1 = store.buildings[0]!;
+    const b2 = store.buildings[1]!;
+
+    // Connect coalition between b1 and b2
+    store.connectCoalition(b1.id, b2.id);
+    expect(store.coalitionConnections.length).toBe(1);
+
+    // Delete b1
+    const success = store.deleteBuilding(b1.id);
+    expect(success).toBe(true);
+    expect(store.buildings.length).toBe(3);
+    expect(store.buildingCount).toBe(3);
+    expect(store.buildings.some((b) => b.id === b1.id)).toBe(false);
+
+    // Connection involving b1 must be severed
+    expect(store.coalitionConnections.length).toBe(0);
+
+    // Deleting a non-existent building returns false
+    expect(store.deleteBuilding("non-existent-id")).toBe(false);
   });
 });

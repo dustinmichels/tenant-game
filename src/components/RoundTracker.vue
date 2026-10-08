@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, shallowRef, onBeforeUnmount } from "vue";
 import { ArrowLeft, ArrowRight } from "lucide-vue-next";
 import { onKeyStroke } from "@vueuse/core";
 import type { GamePhase } from "../types/game";
@@ -41,6 +41,34 @@ const PHASE_CONFIGS: Record<GamePhase, { name: string; gradient: string; accentC
 };
 
 const currentConfig = computed(() => PHASE_CONFIGS[props.phase] || PHASE_CONFIGS[1]);
+const isRumbling = shallowRef(false);
+const rumbleAlternate = shallowRef(false);
+let rumbleTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function triggerRumble() {
+  if (rumbleTimeout) {
+    clearTimeout(rumbleTimeout);
+  }
+  isRumbling.value = true;
+  rumbleAlternate.value = !rumbleAlternate.value;
+  rumbleTimeout = setTimeout(() => {
+    isRumbling.value = false;
+    rumbleTimeout = null;
+  }, 320);
+}
+
+function handleNext() {
+  if (props.disabled) return;
+  triggerRumble();
+  emit("next");
+}
+
+onBeforeUnmount(() => {
+  if (rumbleTimeout) {
+    clearTimeout(rumbleTimeout);
+    rumbleTimeout = null;
+  }
+});
 
 function handlePhaseClick(pId: GamePhase) {
   if (props.disabled) return;
@@ -60,11 +88,11 @@ function isInputElement(target: EventTarget | null): boolean {
   );
 }
 
-onKeyStroke(["ArrowRight", "ArrowDown"], (e) => {
+onKeyStroke(["ArrowRight", "Right", "ArrowDown"], (e) => {
   if (props.disabled) return;
   if (isInputElement(e.target)) return;
   e.preventDefault();
-  emit("next");
+  handleNext();
 });
 
 onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
@@ -91,6 +119,10 @@ onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
       :stroke-width="1.2"
       :seed="404"
       class="tracker-box"
+      :class="{
+        'is-rumbling': isRumbling,
+        'rumble-alt': isRumbling && rumbleAlternate,
+      }"
     >
       <div class="tracker-content">
         <button
@@ -135,10 +167,11 @@ onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
         </div>
         <button
           type="button"
+          class="font-arrow-btn forward"
           :disabled="disabled"
           :title="disabled ? 'Disabled until game begins' : 'Next phase (or Right Arrow key)'"
           aria-label="Next phase"
-          @click="emit('next')"
+          @click="handleNext"
         >
           <ArrowRight :size="15" :stroke-width="1.8" class="arrow-char" aria-hidden="true" />
         </button>
@@ -173,6 +206,76 @@ onKeyStroke(["ArrowLeft", "ArrowUp"], (e) => {
 
 .tracker-box {
   display: inline-flex;
+}
+
+.tracker-box.is-rumbling {
+  animation: box-rumble-1 320ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  will-change: transform;
+}
+
+.tracker-box.is-rumbling.rumble-alt {
+  animation-name: box-rumble-2;
+}
+
+@keyframes box-rumble-1 {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  15% {
+    transform: translate3d(-2.5px, 1px, 0) rotate(-0.8deg);
+  }
+  30% {
+    transform: translate3d(2.5px, -1.2px, 0) rotate(0.8deg);
+  }
+  45% {
+    transform: translate3d(-2px, -1px, 0) rotate(-0.5deg);
+  }
+  60% {
+    transform: translate3d(1.5px, 0.8px, 0) rotate(0.4deg);
+  }
+  75% {
+    transform: translate3d(-1px, -0.4px, 0) rotate(-0.2deg);
+  }
+  90% {
+    transform: translate3d(0.5px, 0.4px, 0) rotate(0.1deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@keyframes box-rumble-2 {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  15% {
+    transform: translate3d(-2.5px, 1px, 0) rotate(-0.8deg);
+  }
+  30% {
+    transform: translate3d(2.5px, -1.2px, 0) rotate(0.8deg);
+  }
+  45% {
+    transform: translate3d(-2px, -1px, 0) rotate(-0.5deg);
+  }
+  60% {
+    transform: translate3d(1.5px, 0.8px, 0) rotate(0.4deg);
+  }
+  75% {
+    transform: translate3d(-1px, -0.4px, 0) rotate(-0.2deg);
+  }
+  90% {
+    transform: translate3d(0.5px, 0.4px, 0) rotate(0.1deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tracker-box.is-rumbling,
+  .tracker-box.is-rumbling.rumble-alt {
+    animation: none;
+  }
 }
 
 .tracker-content {

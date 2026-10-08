@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent, DialogTitle } from "reka-ui";
-import { Dices, X, CornerDownLeft } from "lucide-vue-next";
+import { Dices, X, CornerDownLeft, Palette, ChevronDown } from "lucide-vue-next";
 import { useEventListener } from "@vueuse/core";
 import type { Building, BuildingRoofType, BuildingBush, BuildingPlant } from "../types/game";
 import { BUILDING_COLORS } from "../types/game";
@@ -43,7 +43,7 @@ const emit = defineEmits<{
 const defaultBuildingName = computed(() => `Building ${props.building?.index ?? 1}`);
 
 const defaultColor = computed(() => {
-  if (!props.building) return "#2563eb";
+  if (!props.building) return "#3e6fc2";
   return getBuildingColor(props.building.index, props.totalBuildings);
 });
 
@@ -56,7 +56,7 @@ const minAllowed = computed(() => {
 const showPreservationWarning = ref(false);
 const countInput = ref(props.building?.tenants.length ?? props.defaultPeople);
 const nameInput = ref(props.building?.label ?? "");
-const colorInput = ref(props.building?.color ?? "#2563eb");
+const colorInput = ref(props.building?.color ?? "#3e6fc2");
 const roofInput = ref<BuildingRoofType>(
   props.building?.roofType ?? getDefaultBuildingRoofType(props.building?.index ?? 1),
 );
@@ -73,6 +73,7 @@ const plantInput = ref<BuildingPlant>(
           ? "bush"
           : getDefaultBuildingPlant(props.building?.index ?? 1)),
 );
+const isStyleOpen = ref(false);
 watch(
   () => [props.show, props.building],
   () => {
@@ -93,6 +94,7 @@ watch(
               ? "bush"
               : getDefaultBuildingPlant(props.building.index));
       showPreservationWarning.value = false;
+      isStyleOpen.value = false;
     }
   },
   { immediate: true },
@@ -231,7 +233,11 @@ function handleModalKeydown(e: KeyboardEvent) {
 
   if (e.key === "Enter" && !e.repeat && !e.isComposing) {
     const target = e.target as HTMLElement | null;
-    if (target?.closest(".modal-close-btn") || target?.closest(".btn-cancel")) {
+    if (
+      target?.closest(".modal-close-btn") ||
+      target?.closest(".btn-cancel") ||
+      target?.closest(".style-toggle-btn")
+    ) {
       return;
     }
     e.preventDefault();
@@ -287,11 +293,11 @@ useEventListener(window, "keydown", handleModalKeydown);
               <!-- Section 1: Building Name -->
               <div class="form-section">
                 <div class="section-header-row">
-                  <label for="building-name-input" class="field-label">Building Name</label>
+                  <label for="building-name-input" class="field-label">Title</label>
                   <button
                     type="button"
                     class="reset-shortcut-btn"
-                    title="Reset name to default"
+                    title="Reset title to default"
                     :disabled="nameInput.trim() === defaultBuildingName"
                     @click="resetNameToDefault"
                   >
@@ -371,197 +377,239 @@ useEventListener(window, "keydown", handleModalKeydown);
                 </div>
               </div>
 
-              <!-- Section 3: Building Color -->
-              <div class="form-section">
-                <div class="section-header-row">
-                  <label class="field-label">Building Color</label>
-                  <div class="color-shortcut-group">
-                    <button
-                      type="button"
-                      class="reset-shortcut-btn"
-                      title="Roll a random color close to primary colors"
-                      @click="pickRandomPrimary"
-                    >
-                      <Dices
-                        :size="13"
-                        :stroke-width="1.5"
-                        aria-hidden="true"
-                        style="margin-right: 4px; vertical-align: -2px"
-                      />Random Primary
-                    </button>
-                    <button
-                      type="button"
-                      class="reset-shortcut-btn"
-                      title="Reset color to default"
-                      :disabled="colorInput.toLowerCase() === defaultColor.toLowerCase()"
-                      @click="resetColorToDefault"
-                    >
-                      ↺ Default
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Preset Swatches Grid -->
-                <div class="color-palette-grid">
-                  <button
-                    v-for="c in BUILDING_COLORS"
-                    :key="c"
-                    type="button"
-                    class="color-swatch-btn"
-                    :class="{ 'is-selected': colorInput.toLowerCase() === c.toLowerCase() }"
-                    :style="{ backgroundColor: c }"
-                    :title="`Select ${c}`"
-                    :aria-label="`Color ${c}`"
-                    @click="colorInput = c"
-                  >
+              <!-- Collapsible Style Menu -->
+              <div class="style-collapsible-wrapper">
+                <button
+                  type="button"
+                  class="style-toggle-btn"
+                  :class="{ 'is-expanded': isStyleOpen }"
+                  :aria-expanded="isStyleOpen"
+                  aria-controls="style-collapsible-content"
+                  @click="isStyleOpen = !isStyleOpen"
+                >
+                  <div class="style-toggle-title-wrap">
+                    <Palette :size="15" :stroke-width="2" class="style-toggle-icon" />
+                    <span class="style-toggle-label">Style</span>
                     <span
-                      v-if="colorInput.toLowerCase() === c.toLowerCase()"
-                      class="swatch-check"
-                      aria-hidden="true"
-                    >
-                      ✓
-                    </span>
-                  </button>
-                </div>
-
-                <!-- Custom Color Picker Row -->
-                <div class="custom-color-row">
-                  <label class="custom-picker-wrap" title="Custom color picker">
-                    <input
-                      v-model="colorInput"
-                      type="color"
-                      class="native-color-input"
-                      aria-label="Pick custom color"
-                    />
-                    <span class="custom-picker-swatch" :style="{ backgroundColor: colorInput }" />
-                    <span class="custom-picker-label">Custom picker</span>
-                  </label>
-
-                  <div class="hex-input-wrap">
-                    <span class="hex-prefix">#</span>
-                    <input
-                      :value="colorInput.startsWith('#') ? colorInput.slice(1) : colorInput"
-                      type="text"
-                      class="hex-field"
-                      maxlength="8"
-                      placeholder="2563eb"
-                      spellcheck="false"
-                      aria-label="Hex color value"
-                      @input="handleHexInput"
-                      @keydown.enter.prevent="handleSave"
+                      class="style-preview-swatch"
+                      :style="{ backgroundColor: colorInput }"
+                      title="Current color"
                     />
                   </div>
-                </div>
-              </div>
-
-              <!-- Section 4: Display Settings (Roof Type, Balconies, Front Lawn) -->
-              <div class="form-section">
-                <div class="display-field" style="margin-bottom: 10px">
-                  <label class="field-label">Roof Type</label>
-                  <div class="toggle-group" role="radiogroup" aria-label="Roof Type">
-                    <button
-                      type="button"
-                      class="toggle-btn"
-                      :class="{ 'is-active': roofInput === 'flat' }"
-                      :aria-checked="roofInput === 'flat'"
-                      role="radio"
-                      @click="roofInput = 'flat'"
-                    >
-                      Flat
-                    </button>
-                    <button
-                      type="button"
-                      class="toggle-btn"
-                      :class="{ 'is-active': roofInput === 'flat-chairs' }"
-                      :aria-checked="roofInput === 'flat-chairs'"
-                      role="radio"
-                      @click="roofInput = 'flat-chairs'"
-                    >
-                      Lawn Chairs
-                    </button>
-                    <button
-                      type="button"
-                      class="toggle-btn"
-                      :class="{ 'is-active': roofInput === 'pitched' }"
-                      :aria-checked="roofInput === 'pitched'"
-                      role="radio"
-                      @click="roofInput = 'pitched'"
-                    >
-                      Pitched
-                    </button>
-                    <button
-                      type="button"
-                      class="toggle-btn"
-                      :class="{ 'is-active': roofInput === 'mansard' }"
-                      :aria-checked="roofInput === 'mansard'"
-                      role="radio"
-                      @click="roofInput = 'mansard'"
-                    >
-                      Mansard
-                    </button>
+                  <div class="style-toggle-meta">
+                    <span class="style-toggle-action">{{
+                      isStyleOpen ? "Hide" : "Customize"
+                    }}</span>
+                    <ChevronDown
+                      :size="15"
+                      :stroke-width="2"
+                      class="style-chevron"
+                      :class="{ 'is-open': isStyleOpen }"
+                    />
                   </div>
-                </div>
+                </button>
 
-                <div class="display-settings-row">
-                  <div class="display-field">
-                    <label class="field-label">Balconies</label>
-                    <div class="toggle-group" role="radiogroup" aria-label="Balconies">
+                <div
+                  v-show="isStyleOpen"
+                  id="style-collapsible-content"
+                  class="style-collapsible-content"
+                >
+                  <!-- Section 3: Building Color -->
+                  <div class="form-section">
+                    <div class="section-header-row">
+                      <label class="field-label">Building Color</label>
+                      <div class="color-shortcut-group">
+                        <button
+                          type="button"
+                          class="reset-shortcut-btn"
+                          title="Roll a random color close to primary colors"
+                          @click="pickRandomPrimary"
+                        >
+                          <Dices
+                            :size="13"
+                            :stroke-width="1.5"
+                            aria-hidden="true"
+                            style="margin-right: 4px; vertical-align: -2px"
+                          />Random Primary
+                        </button>
+                        <button
+                          type="button"
+                          class="reset-shortcut-btn"
+                          title="Reset color to default"
+                          :disabled="colorInput.toLowerCase() === defaultColor.toLowerCase()"
+                          @click="resetColorToDefault"
+                        >
+                          ↺ Default
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Preset Swatches Grid -->
+                    <div class="color-palette-grid">
                       <button
+                        v-for="c in BUILDING_COLORS"
+                        :key="c"
                         type="button"
-                        class="toggle-btn"
-                        :class="{ 'is-active': !hasBalconyInput }"
-                        :aria-checked="!hasBalconyInput"
-                        role="radio"
-                        @click="hasBalconyInput = false"
+                        class="color-swatch-btn"
+                        :class="{ 'is-selected': colorInput.toLowerCase() === c.toLowerCase() }"
+                        :style="{ backgroundColor: c }"
+                        :title="`Select ${c}`"
+                        :aria-label="`Color ${c}`"
+                        @click="colorInput = c"
                       >
-                        None
+                        <span
+                          v-if="colorInput.toLowerCase() === c.toLowerCase()"
+                          class="swatch-check"
+                          aria-hidden="true"
+                        >
+                          ✓
+                        </span>
                       </button>
-                      <button
-                        type="button"
-                        class="toggle-btn"
-                        :class="{ 'is-active': hasBalconyInput }"
-                        :aria-checked="hasBalconyInput"
-                        role="radio"
-                        @click="hasBalconyInput = true"
-                      >
-                        Balconies
-                      </button>
+                    </div>
+
+                    <!-- Custom Color Picker Row -->
+                    <div class="custom-color-row">
+                      <label class="custom-picker-wrap" title="Custom color picker">
+                        <input
+                          v-model="colorInput"
+                          type="color"
+                          class="native-color-input"
+                          aria-label="Pick custom color"
+                        />
+                        <span
+                          class="custom-picker-swatch"
+                          :style="{ backgroundColor: colorInput }"
+                        />
+                        <span class="custom-picker-label">Custom picker</span>
+                      </label>
+
+                      <div class="hex-input-wrap">
+                        <span class="hex-prefix">#</span>
+                        <input
+                          :value="colorInput.startsWith('#') ? colorInput.slice(1) : colorInput"
+                          type="text"
+                          class="hex-field"
+                          maxlength="8"
+                          placeholder="2563eb"
+                          spellcheck="false"
+                          aria-label="Hex color value"
+                          @input="handleHexInput"
+                          @keydown.enter.prevent="handleSave"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div class="display-field">
-                    <label class="field-label">Plant</label>
-                    <div class="toggle-group" role="radiogroup" aria-label="Plant">
-                      <button
-                        type="button"
-                        class="toggle-btn"
-                        :class="{ 'is-active': plantInput === 'none' }"
-                        :aria-checked="plantInput === 'none'"
-                        role="radio"
-                        @click="plantInput = 'none'"
-                      >
-                        None
-                      </button>
-                      <button
-                        type="button"
-                        class="toggle-btn"
-                        :class="{ 'is-active': plantInput === 'bush' }"
-                        :aria-checked="plantInput === 'bush'"
-                        role="radio"
-                        @click="plantInput = 'bush'"
-                      >
-                        Bush
-                      </button>
-                      <button
-                        type="button"
-                        class="toggle-btn"
-                        :class="{ 'is-active': plantInput === 'flower' }"
-                        :aria-checked="plantInput === 'flower'"
-                        role="radio"
-                        @click="plantInput = 'flower'"
-                      >
-                        Flower
-                      </button>
+                  <!-- Section 4: Display Settings (Roof Type, Balconies, Front Lawn) -->
+                  <div class="form-section">
+                    <div class="display-field" style="margin-bottom: 10px">
+                      <label class="field-label">Roof Type</label>
+                      <div class="toggle-group" role="radiogroup" aria-label="Roof Type">
+                        <button
+                          type="button"
+                          class="toggle-btn"
+                          :class="{ 'is-active': roofInput === 'flat' }"
+                          :aria-checked="roofInput === 'flat'"
+                          role="radio"
+                          @click="roofInput = 'flat'"
+                        >
+                          Flat
+                        </button>
+                        <button
+                          type="button"
+                          class="toggle-btn"
+                          :class="{ 'is-active': roofInput === 'flat-chairs' }"
+                          :aria-checked="roofInput === 'flat-chairs'"
+                          role="radio"
+                          @click="roofInput = 'flat-chairs'"
+                        >
+                          Lawn Chairs
+                        </button>
+                        <button
+                          type="button"
+                          class="toggle-btn"
+                          :class="{ 'is-active': roofInput === 'pitched' }"
+                          :aria-checked="roofInput === 'pitched'"
+                          role="radio"
+                          @click="roofInput = 'pitched'"
+                        >
+                          Pitched
+                        </button>
+                        <button
+                          type="button"
+                          class="toggle-btn"
+                          :class="{ 'is-active': roofInput === 'mansard' }"
+                          :aria-checked="roofInput === 'mansard'"
+                          role="radio"
+                          @click="roofInput = 'mansard'"
+                        >
+                          Mansard
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="display-settings-row">
+                      <div class="display-field">
+                        <label class="field-label">Balconies</label>
+                        <div class="toggle-group" role="radiogroup" aria-label="Balconies">
+                          <button
+                            type="button"
+                            class="toggle-btn"
+                            :class="{ 'is-active': !hasBalconyInput }"
+                            :aria-checked="!hasBalconyInput"
+                            role="radio"
+                            @click="hasBalconyInput = false"
+                          >
+                            None
+                          </button>
+                          <button
+                            type="button"
+                            class="toggle-btn"
+                            :class="{ 'is-active': hasBalconyInput }"
+                            :aria-checked="hasBalconyInput"
+                            role="radio"
+                            @click="hasBalconyInput = true"
+                          >
+                            Balconies
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="display-field">
+                        <label class="field-label">Plant</label>
+                        <div class="toggle-group" role="radiogroup" aria-label="Plant">
+                          <button
+                            type="button"
+                            class="toggle-btn"
+                            :class="{ 'is-active': plantInput === 'none' }"
+                            :aria-checked="plantInput === 'none'"
+                            role="radio"
+                            @click="plantInput = 'none'"
+                          >
+                            None
+                          </button>
+                          <button
+                            type="button"
+                            class="toggle-btn"
+                            :class="{ 'is-active': plantInput === 'bush' }"
+                            :aria-checked="plantInput === 'bush'"
+                            role="radio"
+                            @click="plantInput = 'bush'"
+                          >
+                            Bush
+                          </button>
+                          <button
+                            type="button"
+                            class="toggle-btn"
+                            :class="{ 'is-active': plantInput === 'flower' }"
+                            :aria-checked="plantInput === 'flower'"
+                            role="radio"
+                            @click="plantInput = 'flower'"
+                          >
+                            Flower
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -750,9 +798,20 @@ useEventListener(window, "keydown", handleModalKeydown);
   border: 1.5px solid #a89c8a;
   border-radius: 6px;
   padding: 8px 12px;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   color: #1c1917;
-  font-family: inherit;
+  font-family:
+    "Outfit",
+    "Plus Jakarta Sans",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
   outline: none;
   box-sizing: border-box;
   transition:
@@ -1125,5 +1184,123 @@ useEventListener(window, "keydown", handleModalKeydown);
   text-transform: uppercase;
   font-weight: 800;
   letter-spacing: 0.04em;
+}
+
+/* Style Collapsible Menu */
+.style-collapsible-wrapper {
+  display: flex;
+  flex-direction: column;
+  border-top: 1.5px dashed #e7e5e4;
+  padding-top: 12px;
+}
+
+.style-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: #fbf8f2;
+  border: 1.5px solid #d6cfc4;
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: #292524;
+  font: inherit;
+  user-select: none;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.style-toggle-btn:hover {
+  background: #f5eedf;
+  border-color: #a89c8a;
+}
+
+.style-toggle-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.style-toggle-btn.is-expanded {
+  background: #f5eedf;
+  border-color: #a89c8a;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.style-toggle-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.style-toggle-icon {
+  color: #78716c;
+}
+
+.style-toggle-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #292524;
+}
+
+.style-preview-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid #292524;
+  display: inline-block;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  margin-left: 2px;
+}
+
+.style-toggle-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.style-toggle-action {
+  font-size: 11px;
+  font-weight: 600;
+  color: #78716c;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.style-chevron {
+  color: #78716c;
+  transition: transform 0.2s ease;
+}
+
+.style-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.style-collapsible-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 14px 12px 12px 12px;
+  background: #faf6ee;
+  border: 1.5px solid #a89c8a;
+  border-top: none;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  animation: slide-down 0.15s ease-out;
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

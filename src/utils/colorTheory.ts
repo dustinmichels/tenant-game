@@ -3,11 +3,10 @@ import {
   interpolate,
   oklch,
   formatHex,
-  wcagContrast,
   clampChroma,
   fixupHueLonger,
 } from "culori";
-
+import { BUILDING_COLORS } from "../types/game";
 export interface PaletteOptions {
   baseHue?: number;
   lightness?: number;
@@ -44,11 +43,11 @@ const PRIMARY_POLES: Record<PrimaryPoleKey, PrimaryPoleConfig> = {
     hueMax: 34,
     lMin: 0.58,
     lMax: 0.64,
-    cMin: 0.2,
-    cMax: 0.23,
+    cMin: 0.13,
+    cMax: 0.15,
     defaultHue: 30,
     defaultLightness: 0.61,
-    defaultChroma: 0.22,
+    defaultChroma: 0.14,
     family: "red",
     label: "Warm Scarlet Red",
   },
@@ -57,11 +56,11 @@ const PRIMARY_POLES: Record<PrimaryPoleKey, PrimaryPoleConfig> = {
     hueMax: 98,
     lMin: 0.78,
     lMax: 0.84,
-    cMin: 0.16,
-    cMax: 0.2,
+    cMin: 0.1,
+    cMax: 0.13,
     defaultHue: 93,
     defaultLightness: 0.81,
-    defaultChroma: 0.18,
+    defaultChroma: 0.12,
     family: "yellow",
     label: "Sunny Gold Yellow",
   },
@@ -70,11 +69,11 @@ const PRIMARY_POLES: Record<PrimaryPoleKey, PrimaryPoleConfig> = {
     hueMax: 268,
     lMin: 0.5,
     lMax: 0.56,
-    cMin: 0.19,
-    cMax: 0.23,
+    cMin: 0.12,
+    cMax: 0.15,
     defaultHue: 262,
     defaultLightness: 0.53,
-    defaultChroma: 0.21,
+    defaultChroma: 0.135,
     family: "blue",
     label: "Royal Cobalt Blue",
   },
@@ -83,11 +82,11 @@ const PRIMARY_POLES: Record<PrimaryPoleKey, PrimaryPoleConfig> = {
     hueMax: 230,
     lMin: 0.62,
     lMax: 0.68,
-    cMin: 0.16,
-    cMax: 0.19,
+    cMin: 0.1,
+    cMax: 0.12,
     defaultHue: 224,
     defaultLightness: 0.65,
-    defaultChroma: 0.175,
+    defaultChroma: 0.11,
     family: "blue",
     label: "Cerulean Azure Blue",
   },
@@ -96,11 +95,11 @@ const PRIMARY_POLES: Record<PrimaryPoleKey, PrimaryPoleConfig> = {
     hueMax: 352,
     lMin: 0.5,
     lMax: 0.56,
-    cMin: 0.2,
-    cMax: 0.23,
+    cMin: 0.13,
+    cMax: 0.15,
     defaultHue: 347,
     defaultLightness: 0.53,
-    defaultChroma: 0.22,
+    defaultChroma: 0.14,
     family: "red",
     label: "Cool Crimson Ruby",
   },
@@ -109,11 +108,11 @@ const PRIMARY_POLES: Record<PrimaryPoleKey, PrimaryPoleConfig> = {
     hueMax: 66,
     lMin: 0.68,
     lMax: 0.74,
-    cMin: 0.18,
-    cMax: 0.21,
+    cMin: 0.12,
+    cMax: 0.14,
     defaultHue: 61,
     defaultLightness: 0.71,
-    defaultChroma: 0.195,
+    defaultChroma: 0.13,
     family: "yellow",
     label: "Warm Marigold Amber",
   },
@@ -145,8 +144,7 @@ export function getRandomPrimaryColor(family?: PrimaryFamily): string {
     const chosen = matchingPoles[Math.floor(Math.random() * matchingPoles.length)]!;
     return samplePrimaryPole(chosen);
   }
-  const chosen = POLE_KEYS[Math.floor(Math.random() * POLE_KEYS.length)]!;
-  return samplePrimaryPole(chosen);
+  return BUILDING_COLORS[Math.floor(Math.random() * BUILDING_COLORS.length)]!;
 }
 
 /**
@@ -345,7 +343,9 @@ export function alterColorToBeDifferent(
 
 /**
  * Generates an array of starting colors for N buildings.
- * By default, generates randomized colors close to primary colors (Red, Yellow, Blue).
+ * By default, uses the curated 12-color BUILDING_COLORS palette ordered to maximize
+ * mutual contrast and iconic distinctness for early picks (Red, Blue, Gold, Green, Purple, Teal, Orange, etc.).
+ * When count > 12, extends with golden-ratio spaced OKLCH hues to guarantee non-repeating colors.
  * If options.baseHue is explicitly provided, generates an equidistant hue circle.
  */
 export function generateDivergentPalette(count: number, options: PaletteOptions = {}): string[] {
@@ -355,7 +355,7 @@ export function generateDivergentPalette(count: number, options: PaletteOptions 
   if (typeof options.baseHue === "number") {
     const baseHue = options.baseHue;
     const lightness = options.lightness ?? 0.6;
-    const targetChroma = options.targetChroma ?? 0.2;
+    const targetChroma = options.targetChroma ?? 0.13;
 
     const hues: number[] = [];
     const step = 360 / count;
@@ -377,13 +377,28 @@ export function generateDivergentPalette(count: number, options: PaletteOptions 
     return hues.map((h) => oklchToHex(lightness, targetChroma, h));
   }
 
-  // Default: generate randomized colors close to primary colors
-  return generatePrimaryPalette(count, options);
+  // Curated 12-color palette prioritizing contrast and iconic colors for early picks
+  if (count <= BUILDING_COLORS.length) {
+    return BUILDING_COLORS.slice(0, count);
+  }
+
+  // When count > 12, start with all 12 curated colors and extend with golden-ratio hue steps
+  const result = [...BUILDING_COLORS];
+  const extraNeeded = count - BUILDING_COLORS.length;
+  const lightness = options.lightness ?? 0.6;
+  const chroma = options.targetChroma ?? 0.13;
+  const goldenAngle = 137.50776405003785;
+  let currentHue = 15;
+  for (let i = 0; i < extraNeeded; i++) {
+    currentHue = (currentHue + goldenAngle) % 360;
+    result.push(oklchToHex(lightness, chroma, currentHue));
+  }
+  return result;
 }
 
 /**
  * Returns the starting color for building `index` (1-based) out of `totalBuildings`.
- * Uses deterministic mode for stable slot previews or "Reset to Default" lookups.
+ * Uses the curated palette for stable slot previews or "Reset to Default" lookups.
  */
 export function getBuildingStartingColor(
   index: number,
@@ -391,7 +406,7 @@ export function getBuildingStartingColor(
   options: PaletteOptions = {},
 ): string {
   const count = Math.max(1, totalBuildings || 1);
-  const palette = generatePrimaryPalette(count, { deterministic: true, ...options });
+  const palette = generateDivergentPalette(count, options);
   const zeroIndex = Math.max(0, (index - 1) % count);
   return palette[zeroIndex] ?? DEFAULT_COLOR;
 }
@@ -621,8 +636,34 @@ export function computeCoalitionColor(
 
 /**
  * Returns high-contrast text color (#ffffff or #1f1b16) for a given background color.
- * Uses standard WCAG relative luminance.
+ * Uses OKLCH perceptual lightness: colors with lightness >= 0.70 (e.g. pale yellows, golds, pastels)
+ * use dark text (#1f1b16), while mid-tones and darker colors (reds, teals, blues, greens, terracottas)
+ * use crisp white text (#ffffff).
  */
 export function getContrastTextColor(color: string): string {
-  return wcagContrast(color, "#1f1b16") >= wcagContrast(color, "#ffffff") ? "#1f1b16" : "#ffffff";
+  const parsed = oklch(color);
+  if (!parsed) return "#ffffff";
+  return parsed.l >= 0.7 ? "#1f1b16" : "#ffffff";
+}
+/**
+ * Returns a slightly more muted version of a color (e.g. for neighborhood setup mode).
+ * Uses OKLCH perceptual color space to reduce chroma while preserving hue and perceptual balance.
+ */
+export function muteColor(colorHex: string, chromaFactor = 0.65): string {
+  if (!colorHex) return colorHex;
+  const c = oklch(colorHex);
+  if (!c) return colorHex;
+  // Reduce chroma by chromaFactor and subtly soften lightness towards warm paper tone
+  const mutedL = Math.min(0.85, c.l * 0.96 + 0.04 * 0.72);
+  const mutedC = (c.c ?? 0) * chromaFactor;
+  const inGamut = clampChroma(
+    {
+      mode: "oklch",
+      l: mutedL,
+      c: mutedC,
+      h: c.h,
+    },
+    "oklch",
+  );
+  return formatHex(inGamut) ?? colorHex;
 }

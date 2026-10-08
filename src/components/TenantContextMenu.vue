@@ -298,10 +298,21 @@ function handleToggleEviction(evicted: boolean) {
 }
 
 .building-name {
+  font-family:
+    "Outfit",
+    "Plus Jakarta Sans",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 14.5px;
   color: #1c1917;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .tenant-unit {

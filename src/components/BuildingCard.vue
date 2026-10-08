@@ -7,13 +7,14 @@ import type {
   BuildingRoofType,
   BuildingBush,
   BuildingPlant,
+  GameScreen,
 } from "../types/game";
 import { isBuildingOrganized, getBuildingUnionCount } from "../utils/coalitions";
 import { getTenantGridCols, PERSON_ASPECT_RATIO } from "../utils/layout";
 import { BASELINE_PERSON_WIDTH } from "../utils/sizing";
 import { createSeed } from "../utils/rough";
 import type { PathInfo } from "../utils/rough";
-import { getContrastTextColor } from "../utils/colorTheory";
+import { getContrastTextColor, muteColor } from "../utils/colorTheory";
 import {
   getRoofHeight,
   getDefaultBuildingRoofType,
@@ -26,7 +27,7 @@ import {
 } from "../utils/buildingArchitecture";
 import RoughBox from "./RoughBox.vue";
 import BuildingWindow from "./BuildingWindow.vue";
-import { Pencil, Cable, GripVertical } from "lucide-vue-next";
+import { Pencil, Cable, GripVertical, X } from "lucide-vue-next";
 const props = withDefaults(
   defineProps<{
     building: Building;
@@ -41,6 +42,9 @@ const props = withDefaults(
     coalitions?: CoalitionGroup[];
     canMove?: boolean;
     editBuildings?: boolean;
+    canEdit?: boolean;
+    screen?: GameScreen;
+    isNeighborhoodSetup?: boolean;
     hasBegun?: boolean;
   }>(),
   {
@@ -55,25 +59,37 @@ const props = withDefaults(
     coalitions: () => [],
     canMove: true,
     editBuildings: undefined,
+    canEdit: undefined,
+    screen: undefined,
+    isNeighborhoodSetup: undefined,
     hasBegun: true,
   },
 );
+
+const isSetupGateActive = computed(() => {
+  if (props.isNeighborhoodSetup !== undefined) return props.isNeighborhoodSetup;
+  if (props.screen !== undefined) return props.screen === "neighborhood-setup";
+  if (props.hasBegun !== undefined) return !props.hasBegun;
+  return false;
+});
+const isGameplayActive = computed(() => !isSetupGateActive.value);
 const emit = defineEmits<{
   (e: "tenant-select", payload: { event: MouseEvent; tenant: Tenant; building: Building }): void;
   (e: "adjust-tenants", building: Building): void;
   (e: "pointerdown-drag", event: PointerEvent, building: Building): void;
   (e: "start-thread", building: Building, event: PointerEvent): void;
+  (e: "delete-building", building: Building): void;
 }>();
 const buildingSeed = computed(() =>
   createSeed(`building_${props.building.id}_${props.building.index}`),
 );
 const effectiveUnionCount = computed(() => {
-  if (!props.hasBegun) return 0;
+  if (isSetupGateActive.value) return 0;
   if (props.unionCount !== undefined) return props.unionCount;
   return getBuildingUnionCount(props.building, props.coalitions);
 });
 const isOrganized = computed(() => {
-  if (!props.hasBegun) return false;
+  if (isSetupGateActive.value) return false;
   return props.isOrganized !== undefined
     ? props.isOrganized
     : isBuildingOrganized(props.building, props.coalitions);
@@ -93,18 +109,20 @@ const buildingNumber = computed(() => {
 const barTextColor = computed(() => getContrastTextColor(activeColor.value));
 
 function handlePointerDownSpool(e: PointerEvent) {
-  if (!props.hasBegun) return;
+  if (isSetupGateActive.value) return;
   if (e.button !== 0) return;
   emit("start-thread", props.building, e);
 }
 function handleTenantClick(e: MouseEvent, tenant: Tenant) {
-  if (!props.hasBegun) return;
+  if (isSetupGateActive.value) return;
   emit("tenant-select", { event: e, tenant, building: props.building });
 }
 
-const isEditable = computed(() =>
-  props.editBuildings !== undefined ? props.editBuildings : props.canMove,
-);
+const isEditable = computed(() => {
+  if (props.canEdit !== undefined) return props.canEdit;
+  if (props.editBuildings !== undefined) return props.editBuildings;
+  return props.canMove ?? true;
+});
 
 function handleDragPointerDown(e: PointerEvent) {
   if (!isEditable.value) return;
@@ -182,6 +200,8 @@ const plantPaths = computed<PathInfo[]>(() => {
     buildingSeed.value + 500,
     outlineColor.value,
     isOrganized.value,
+    props.building.flowerColor,
+    activeColor.value,
   );
 });
 
@@ -207,6 +227,7 @@ const pinBtnTop = computed(() => {
   <div
     class="building-card-wrapper"
     :class="{
+      'is-neighborhood-setup': isSetupGateActive,
       'is-building-organized': isOrganized,
       'is-in-coalition': isInCoalition,
       'is-connecting-source': isConnectingSource,
@@ -237,37 +258,54 @@ const pinBtnTop = computed(() => {
         <Pencil :size="18" :stroke-width="1.9" class="settings-pencil-icon" aria-hidden="true" />
       </button>
     </transition>
-    <!-- Coalition connector circle button/pin -->
-    <button
-      type="button"
-      class="coalition-pin-btn"
-      :class="{
-        'is-connected': isInCoalition,
-        'is-active-source': isConnectingSource,
-        'is-disabled': !hasBegun,
-      }"
-      :disabled="!hasBegun"
-      :style="{
-        top: `${pinBtnTop}px`,
-        backgroundColor: !hasBegun ? '#f4ece1' : isInCoalition ? activeColor : '#fffdfa',
-        color: !hasBegun ? '#a89f91' : isInCoalition ? '#ffffff' : activeColor,
-      }"
-      :title="
-        !hasBegun
-          ? 'Coalitions cannot be formed during setup'
-          : isInCoalition
-            ? `${building.label} is in a coalition (${coalitionNames || 'Connected'}). Drag thread to connect another building!`
-            : `Coalition: Click and drag thread to connect ${building.label} with another building`
-      "
-      :aria-label="
-        !hasBegun
-          ? 'Coalitions disabled during setup'
-          : `Connect coalition thread from ${building.label}`
-      "
-      @pointerdown.stop="handlePointerDownSpool"
-    >
-      <Cable :size="14" :stroke-width="1.5" class="spool-icon" aria-hidden="true" />
-    </button>
+    <!-- Delete building button in edit mode OR Coalition connector circle button/pin -->
+    <transition name="edit-control-pop">
+      <button
+        v-if="isEditable"
+        type="button"
+        class="building-delete-btn"
+        :style="{
+          top: `${pinBtnTop}px`,
+        }"
+        :title="`Delete ${building.label}`"
+        :aria-label="`Delete ${building.label}`"
+        @pointerdown.stop
+        @click.stop="emit('delete-building', building)"
+      >
+        <X :size="15" :stroke-width="2.2" class="delete-icon" aria-hidden="true" />
+      </button>
+      <button
+        v-else
+        type="button"
+        class="coalition-pin-btn"
+        :class="{
+          'is-connected': isInCoalition,
+          'is-active-source': isConnectingSource,
+          'is-disabled': isSetupGateActive,
+        }"
+        :disabled="isSetupGateActive"
+        :style="{
+          top: `${pinBtnTop}px`,
+          backgroundColor: isSetupGateActive ? '#f4ece1' : isInCoalition ? activeColor : '#fffdfa',
+          color: isSetupGateActive ? '#a89f91' : isInCoalition ? barTextColor : activeColor,
+        }"
+        :title="
+          isSetupGateActive
+            ? 'Coalitions cannot be formed during setup'
+            : isInCoalition
+              ? `${building.label} is in a coalition (${coalitionNames || 'Connected'}). Drag thread to connect another building!`
+              : `Coalition: Click and drag thread to connect ${building.label} with another building`
+        "
+        :aria-label="
+          isSetupGateActive
+            ? 'Coalitions disabled during setup'
+            : `Connect coalition thread from ${building.label}`
+        "
+        @pointerdown.stop="handlePointerDownSpool"
+      >
+        <Cable :size="14" :stroke-width="1.5" class="spool-icon" aria-hidden="true" />
+      </button>
+    </transition>
 
     <!-- Building drag indicator handle (only in edit mode) -->
     <transition name="edit-control-pop">
@@ -321,7 +359,7 @@ const pinBtnTop = computed(() => {
       :style="{ width: `${cardWidth}px` }"
     >
       <div class="building-card-inner">
-        <!-- Header status strip: color dot, union ratio, organized indicator -->
+        <!-- Header status strip: color dot, union ratio -->
         <div class="building-header-status">
           <div
             class="status-stat-group"
@@ -333,7 +371,7 @@ const pinBtnTop = computed(() => {
               :title="
                 isInCoalition
                   ? `Coalition Color: ${activeColor}`
-                  : hasBegun
+                  : isGameplayActive
                     ? `Instigator Color: ${activeColor}`
                     : `Building Color: ${activeColor}`
               "
@@ -347,14 +385,6 @@ const pinBtnTop = computed(() => {
               <span class="ratio-label">in union</span>
             </span>
           </div>
-
-          <span
-            v-if="isOrganized"
-            class="status-organized-flag"
-            title="Building is organized (2+ in union)"
-          >
-            ✊ Org
-          </span>
         </div>
 
         <!-- Inside the building: apartments grid -->
@@ -370,11 +400,14 @@ const pinBtnTop = computed(() => {
             :variant="tenant.variant"
             :label="`${building.label} • Resident ${idx + 1}`"
             :seed="buildingSeed + 100 + idx * 7"
-            :color="hasBegun && (tenant.inUnion || tenant.isInstigator) ? activeColor : undefined"
-            :is-instigator="hasBegun && Boolean(tenant.isInstigator)"
-            :in-union="hasBegun && Boolean(tenant.inUnion)"
-            :is-evicted="hasBegun && Boolean(tenant.isEvicted)"
-            :has-begun="hasBegun"
+            :color="
+              isGameplayActive && (tenant.inUnion || tenant.isInstigator) ? activeColor : undefined
+            "
+            :is-instigator="isGameplayActive && Boolean(tenant.isInstigator)"
+            :in-union="isGameplayActive && Boolean(tenant.inUnion)"
+            :is-evicted="isGameplayActive && Boolean(tenant.isEvicted)"
+            :is-neighborhood-setup="isSetupGateActive"
+            :has-begun="isGameplayActive"
             :has-balcony="shouldShowBalcony(idx)"
             @select="handleTenantClick($event, tenant)"
             @contextmenu="handleTenantClick($event, tenant)"
@@ -437,33 +470,76 @@ const pinBtnTop = computed(() => {
 
 /* Coalition state highlights on building card */
 .building-card-wrapper.is-connecting-source {
-  transform: scale(1.03);
+  transform: translateY(-3px) scale(1.015);
+  transition: transform 0.25s ease;
+}
+
+.building-card-wrapper.is-connecting-source::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border: 2px dashed var(--building-accent);
+  border-radius: 12px;
+  pointer-events: none;
   box-shadow:
-    0 0 0 3px #f59e0b,
-    0 8px 16px rgba(0, 0, 0, 0.15);
+    0 0 16px color-mix(in srgb, var(--building-accent) 28%, transparent),
+    0 4px 14px rgba(0, 0, 0, 0.08);
+  opacity: 0.92;
+  animation: source-glow-breathe 2.4s ease-in-out infinite alternate;
 }
 
 .building-card-wrapper.is-connecting-target {
-  transform: scale(1.05);
-  box-shadow:
-    0 0 0 3.5px #3b82f6,
-    0 10px 24px rgba(59, 130, 246, 0.35);
-  animation: target-building-pulse 0.9s infinite alternate;
+  transform: translateY(-4px) scale(1.025);
+  transition: transform 0.2s ease;
 }
 
-@keyframes target-building-pulse {
-  from {
+.building-card-wrapper.is-connecting-target::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border: 2.5px dashed var(--building-accent);
+  border-radius: 12px;
+  pointer-events: none;
+  animation: target-glow-breathe 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes source-glow-breathe {
+  0% {
     box-shadow:
-      0 0 0 3px #3b82f6,
-      0 6px 14px rgba(59, 130, 246, 0.25);
+      0 0 10px color-mix(in srgb, var(--building-accent) 18%, transparent),
+      0 4px 10px rgba(0, 0, 0, 0.06);
+    opacity: 0.82;
   }
-  to {
+  100% {
     box-shadow:
-      0 0 0 5px #2563eb,
-      0 10px 24px rgba(37, 99, 235, 0.45);
+      0 0 22px color-mix(in srgb, var(--building-accent) 42%, transparent),
+      0 8px 20px rgba(0, 0, 0, 0.1);
+    opacity: 1;
   }
 }
 
+@keyframes target-glow-breathe {
+  0% {
+    box-shadow:
+      0 0 14px color-mix(in srgb, var(--building-accent) 30%, transparent),
+      0 4px 14px rgba(0, 0, 0, 0.08);
+    opacity: 0.85;
+  }
+  100% {
+    box-shadow:
+      0 0 28px color-mix(in srgb, var(--building-accent) 55%, transparent),
+      0 8px 22px color-mix(in srgb, var(--building-accent) 25%, transparent);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .building-card-wrapper.is-connecting-source::after,
+  .building-card-wrapper.is-connecting-target::after,
+  .coalition-pin-btn.is-active-source {
+    animation: none;
+  }
+}
 /* Coalition Pin Button (circle button at corner) */
 .coalition-pin-btn {
   position: absolute;
@@ -503,10 +579,21 @@ const pinBtnTop = computed(() => {
 }
 
 .coalition-pin-btn.is-active-source {
-  transform: scale(1.25);
+  transform: scale(1.22);
   box-shadow:
-    0 0 0 3px #f59e0b,
-    0 4px 12px rgba(0, 0, 0, 0.3);
+    0 0 0 2.5px color-mix(in srgb, var(--building-accent) 50%, #fff),
+    0 0 14px color-mix(in srgb, var(--building-accent) 60%, transparent),
+    0 4px 12px rgba(0, 0, 0, 0.25);
+  animation: pin-breathe 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes pin-breathe {
+  0% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1.26);
+  }
 }
 
 .spool-icon {
@@ -530,6 +617,55 @@ const pinBtnTop = computed(() => {
   box-shadow: none;
   cursor: not-allowed;
 }
+/* Delete Building Button (red X circle button in top right in edit mode) */
+.building-delete-btn {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid #dc2626;
+  background-color: #fee2e2;
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  cursor: pointer;
+  z-index: 25;
+  box-shadow:
+    0 2px 6px rgba(220, 38, 38, 0.25),
+    inset 0 1px 2px rgba(255, 255, 255, 0.6);
+  transition:
+    transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.18s ease;
+  user-select: none;
+  touch-action: manipulation;
+  padding: 0;
+}
+
+.building-delete-btn:hover {
+  transform: scale(1.22);
+  background-color: #dc2626;
+  color: #ffffff;
+  border-color: #b91c1c;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+}
+
+.building-delete-btn:active {
+  transform: scale(1.12);
+  background-color: #b91c1c;
+  border-color: #991b1b;
+}
+
+.delete-icon {
+  display: inline-block;
+  line-height: 1;
+  pointer-events: none;
+}
 
 /* Building Bottom Bar */
 .building-bottom-bar {
@@ -537,25 +673,37 @@ const pinBtnTop = computed(() => {
   align-items: center;
   justify-content: center;
   margin: 2px 4px 4px;
-  padding: 4px 8px;
+  padding: 5px 8px;
   border-radius: 4px;
-  font-family: inherit;
-  font-size: 13.5px;
+  font-family:
+    "Outfit",
+    "Plus Jakarta Sans",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-size: 15.5px;
   font-weight: 700;
-  letter-spacing: 0.01em;
-  line-height: 1.2;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
   cursor: default;
   user-select: none;
   touch-action: none;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease,
+    transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.15s ease,
+    filter 0.15s ease;
 }
 
 .building-bottom-bar.is-draggable {
   cursor: grab;
-  transition:
-    transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1),
-    box-shadow 0.15s ease,
-    filter 0.15s ease;
 }
 
 .building-bottom-bar.is-draggable:hover {
@@ -570,6 +718,11 @@ const pinBtnTop = computed(() => {
 }
 
 .building-bottom-bar-text {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 700;
+  letter-spacing: inherit;
+  line-height: inherit;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -638,16 +791,18 @@ const pinBtnTop = computed(() => {
 }
 
 .building-card-wrapper.is-building-organized .building-rough-box {
-  filter: drop-shadow(0 0 2.5px var(--building-accent)) drop-shadow(0 0 7px var(--building-accent))
-    drop-shadow(0 0 14px color-mix(in srgb, var(--building-accent) 55%, transparent));
+  filter: drop-shadow(0 0 1.5px color-mix(in srgb, var(--building-accent) 55%, transparent))
+    drop-shadow(0 0 5px color-mix(in srgb, var(--building-accent) 25%, transparent))
+    drop-shadow(0 0 9px color-mix(in srgb, var(--building-accent) 15%, transparent));
 }
 
 .building-card-wrapper.is-building-organized:hover .building-rough-box {
-  filter: drop-shadow(0 0 3px var(--building-accent)) drop-shadow(0 0 9px var(--building-accent))
-    drop-shadow(0 0 18px color-mix(in srgb, var(--building-accent) 65%, transparent));
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--building-accent) 65%, transparent))
+    drop-shadow(0 0 6px color-mix(in srgb, var(--building-accent) 35%, transparent))
+    drop-shadow(0 0 11px color-mix(in srgb, var(--building-accent) 20%, transparent));
 }
 .building-card-wrapper.is-building-organized .roof-rough-svg {
-  filter: drop-shadow(0 0 2px var(--building-accent));
+  filter: drop-shadow(0 0 1.5px color-mix(in srgb, var(--building-accent) 35%, transparent));
 }
 
 .building-card-inner {
@@ -711,6 +866,7 @@ const pinBtnTop = computed(() => {
   border: 1.2px solid #29241e;
   flex-shrink: 0;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  transition: background-color 0.3s ease;
 }
 
 .status-ratio-text {
@@ -747,18 +903,6 @@ const pinBtnTop = computed(() => {
   color: #6b5d4d;
   margin-left: 3px;
   font-weight: 600;
-}
-
-.status-organized-flag {
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: #15803d;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  line-height: 1.2;
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .building-settings-btn {
@@ -854,6 +998,11 @@ const pinBtnTop = computed(() => {
   opacity: 0;
   transform: translateX(-50%) scale(0.4);
 }
+.building-delete-btn.edit-control-pop-enter-from,
+.building-delete-btn.edit-control-pop-leave-to {
+  opacity: 0;
+  transform: scale(0.4);
+}
 
 /* Landscaping plant in front of house (flower or bush) */
 .building-plant-area,
@@ -898,6 +1047,6 @@ const pinBtnTop = computed(() => {
 
 .building-card-wrapper.is-building-organized .plant-svg,
 .building-card-wrapper.is-building-organized .bush-svg {
-  filter: drop-shadow(0 0 2px var(--building-accent));
+  filter: drop-shadow(0 0 1.5px color-mix(in srgb, var(--building-accent) 35%, transparent));
 }
 </style>

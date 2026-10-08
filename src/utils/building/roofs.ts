@@ -304,7 +304,7 @@ export function generateRoofPaths(
   }
 
   if (type === "flat-chairs") {
-    // Flat roof with parapet, coping, and 2 larger, well-proportioned lawn chairs on top
+    // Flat roof with parapet, coping, and charming minimalist folding lawn chairs on top
     const parapetTopY = 16;
     const parapetBottomY = h - 2;
 
@@ -335,267 +335,117 @@ export function generateRoofPaths(
       ...roughGen.toPaths(cornice),
     );
 
-    // 2. Two prominent lawn chairs sitting on rooftop (facing each other)
+    // 2. Two charming folding lawn chairs facing each other
     const cx = Math.round(w / 2);
     const yBase = parapetTopY;
-    const ySeat = 9;
-    const yTop = 2;
+    const ySeatFront = 9.5;
+    const ySeatBack = 10.5;
+    const yTop = 2.5;
+    const gap = 8;
+
+    const chairStrokeWidth = isOrganized ? 2.5 : 2.1;
+    const frameStrokeWidth = isOrganized ? 1.2 : 0.95;
 
     // CHAIR 1 (Left chair, facing right towards center)
-    const c1BackTopX = cx - 24;
-    const c1SeatBackX = cx - 17;
-    const c1SeatFrontX = cx - 4;
+    const c1SeatFrontX = cx - gap;
+    const c1SeatBackX = cx - gap - 11;
+    const c1BackTopX = cx - gap - 16;
 
-    // Woven webbing polygons (retro cyan / sky blue)
-    const c1BackWeb = roughGen.polygon(
-      [
-        [c1BackTopX - 1, yTop],
-        [c1BackTopX + 2.5, yTop],
-        [c1SeatBackX + 2.5, ySeat],
-        [c1SeatBackX - 1, ySeat],
-      ],
-      {
-        roughness: 0.3,
-        stroke: "#0284c7",
-        fill: "#38bdf8",
-        fillStyle: "solid",
-        strokeWidth: 0.8,
-        seed: s + 17,
-      },
-    );
-    const c1SeatWeb = roughGen.polygon(
-      [
-        [c1SeatBackX, ySeat - 1.5],
-        [c1SeatFrontX, ySeat - 1.5],
-        [c1SeatFrontX, ySeat + 1.5],
-        [c1SeatBackX, ySeat + 1.5],
-      ],
-      {
-        roughness: 0.3,
-        stroke: "#0284c7",
-        fill: "#38bdf8",
-        fillStyle: "solid",
-        strokeWidth: 0.8,
-        seed: s + 18,
-      },
-    );
-
-    // Chair 1 tubular frame (backrest & seat)
-    const c1Back = roughGen.line(c1BackTopX, yTop, c1SeatBackX, ySeat, {
-      roughness: 0.25,
-      stroke,
-      strokeWidth: detailStrokeWidth,
+    // Folding X-scissor legs
+    const c1Leg1 = roughGen.line(c1SeatFrontX - 1, ySeatFront, c1SeatBackX - 3, yBase, {
+      roughness: 0.2,
+      stroke: "#71717a",
+      strokeWidth: frameStrokeWidth,
       seed: s + 10,
     });
-    const c1Seat = roughGen.line(c1SeatBackX, ySeat, c1SeatFrontX, ySeat, {
-      roughness: 0.25,
-      stroke,
-      strokeWidth: detailStrokeWidth,
+    const c1Leg2 = roughGen.line(c1SeatBackX + 1, ySeatBack, c1SeatFrontX + 1, yBase, {
+      roughness: 0.2,
+      stroke: "#71717a",
+      strokeWidth: frameStrokeWidth,
       seed: s + 11,
     });
 
-    // Folding X-frame legs & foot runner
-    const c1Leg1 = roughGen.line(c1SeatFrontX - 2, ySeat, c1SeatBackX - 2, yBase, {
-      roughness: 0.3,
-      stroke: "#52525b",
-      strokeWidth: 1.0,
+    // Slanted backrest and seat sling (retro cyan / sky blue)
+    const c1Back = roughGen.line(c1BackTopX, yTop, c1SeatBackX, ySeatBack, {
+      roughness: 0.2,
+      stroke: "#0284c7",
+      strokeWidth: chairStrokeWidth,
       seed: s + 12,
     });
-    const c1Leg2 = roughGen.line(c1SeatBackX + 2, ySeat, c1SeatFrontX + 1, yBase, {
-      roughness: 0.3,
-      stroke: "#52525b",
-      strokeWidth: 1.0,
+    const c1Seat = roughGen.line(c1SeatBackX, ySeatBack, c1SeatFrontX, ySeatFront, {
+      roughness: 0.2,
+      stroke: "#0284c7",
+      strokeWidth: chairStrokeWidth,
       seed: s + 13,
-    });
-    const c1Foot = roughGen.line(c1SeatBackX - 3, yBase, c1SeatFrontX + 2, yBase, {
-      roughness: 0.25,
-      stroke: "#52525b",
-      strokeWidth: 1.1,
-      seed: s + 14,
-    });
-
-    // Armrest
-    const c1Arm = roughGen.line(cx - 20, 5.5, cx - 8, 5.5, {
-      roughness: 0.2,
-      stroke,
-      strokeWidth: detailStrokeWidth,
-      seed: s + 15,
-    });
-    const c1ArmPost = roughGen.line(cx - 8, 5.5, cx - 8, ySeat, {
-      roughness: 0.2,
-      stroke,
-      strokeWidth: detailStrokeWidth,
-      seed: s + 16,
-    });
-
-    // White lattice accent stripes across webbing
-    const c1Stripe1 = roughGen.line(cx - 21.5, 4.5, cx - 18.5, 4.5, {
-      roughness: 0.2,
-      stroke: "#ffffff",
-      strokeWidth: 1.2,
-      seed: s + 19,
-    });
-    const c1Stripe2 = roughGen.line(cx - 19, 7, cx - 16, 7, {
-      roughness: 0.2,
-      stroke: "#ffffff",
-      strokeWidth: 1.2,
-      seed: s + 20,
-    });
-    const c1Stripe3 = roughGen.line(cx - 13, ySeat - 1.5, cx - 13, ySeat + 1.5, {
-      roughness: 0.2,
-      stroke: "#ffffff",
-      strokeWidth: 1.2,
-      seed: s + 21,
-    });
-    const c1Stripe4 = roughGen.line(cx - 8, ySeat - 1.5, cx - 8, ySeat + 1.5, {
-      roughness: 0.2,
-      stroke: "#ffffff",
-      strokeWidth: 1.2,
-      seed: s + 22,
     });
 
     // CHAIR 2 (Right chair, facing left towards center)
-    const c2SeatFrontX = cx + 4;
-    const c2SeatBackX = cx + 17;
-    const c2BackTopX = cx + 24;
+    const c2SeatFrontX = cx + gap;
+    const c2SeatBackX = cx + gap + 11;
+    const c2BackTopX = cx + gap + 16;
 
-    // Woven webbing polygons (warm retro orange / amber)
-    const c2BackWeb = roughGen.polygon(
-      [
-        [c2BackTopX + 1, yTop],
-        [c2BackTopX - 2.5, yTop],
-        [c2SeatBackX - 2.5, ySeat],
-        [c2SeatBackX + 1, ySeat],
-      ],
-      {
-        roughness: 0.3,
-        stroke: "#ea580c",
-        fill: "#fb923c",
-        fillStyle: "solid",
-        strokeWidth: 0.8,
-        seed: s + 37,
-      },
-    );
-    const c2SeatWeb = roughGen.polygon(
-      [
-        [c2SeatBackX, ySeat - 1.5],
-        [c2SeatFrontX, ySeat - 1.5],
-        [c2SeatFrontX, ySeat + 1.5],
-        [c2SeatBackX, ySeat + 1.5],
-      ],
-      {
-        roughness: 0.3,
-        stroke: "#ea580c",
-        fill: "#fb923c",
-        fillStyle: "solid",
-        strokeWidth: 0.8,
-        seed: s + 38,
-      },
-    );
+    // Folding X-scissor legs
+    const c2Leg1 = roughGen.line(c2SeatFrontX + 1, ySeatFront, c2SeatBackX + 3, yBase, {
+      roughness: 0.2,
+      stroke: "#71717a",
+      strokeWidth: frameStrokeWidth,
+      seed: s + 20,
+    });
+    const c2Leg2 = roughGen.line(c2SeatBackX - 1, ySeatBack, c2SeatFrontX - 1, yBase, {
+      roughness: 0.2,
+      stroke: "#71717a",
+      strokeWidth: frameStrokeWidth,
+      seed: s + 21,
+    });
 
-    // Chair 2 tubular frame (backrest & seat)
-    const c2Back = roughGen.line(c2BackTopX, yTop, c2SeatBackX, ySeat, {
-      roughness: 0.25,
-      stroke,
-      strokeWidth: detailStrokeWidth,
+    // Slanted backrest and seat sling (retro orange / coral)
+    const c2Back = roughGen.line(c2BackTopX, yTop, c2SeatBackX, ySeatBack, {
+      roughness: 0.2,
+      stroke: "#ea580c",
+      strokeWidth: chairStrokeWidth,
+      seed: s + 22,
+    });
+    const c2Seat = roughGen.line(c2SeatBackX, ySeatBack, c2SeatFrontX, ySeatFront, {
+      roughness: 0.2,
+      stroke: "#ea580c",
+      strokeWidth: chairStrokeWidth,
+      seed: s + 23,
+    });
+
+    // 3. Small patio side table between the chairs
+    const tableTopY = 11.5;
+    const tableTop = roughGen.line(cx - 3.5, tableTopY, cx + 3.5, tableTopY, {
+      roughness: 0.2,
+      stroke: "#52525b",
+      strokeWidth: isOrganized ? 1.4 : 1.2,
       seed: s + 30,
     });
-    const c2Seat = roughGen.line(c2SeatBackX, ySeat, c2SeatFrontX, ySeat, {
-      roughness: 0.25,
-      stroke,
-      strokeWidth: detailStrokeWidth,
+    const tableLegL = roughGen.line(cx - 2.5, tableTopY, cx - 2.5, yBase, {
+      roughness: 0.2,
+      stroke: "#71717a",
+      strokeWidth: frameStrokeWidth,
       seed: s + 31,
     });
-
-    // Folding X-frame legs & foot runner
-    const c2Leg1 = roughGen.line(c2SeatFrontX + 2, ySeat, c2SeatBackX + 2, yBase, {
-      roughness: 0.3,
-      stroke: "#52525b",
-      strokeWidth: 1.0,
+    const tableLegR = roughGen.line(cx + 2.5, tableTopY, cx + 2.5, yBase, {
+      roughness: 0.2,
+      stroke: "#71717a",
+      strokeWidth: frameStrokeWidth,
       seed: s + 32,
-    });
-    const c2Leg2 = roughGen.line(c2SeatBackX - 2, ySeat, c2SeatFrontX - 1, yBase, {
-      roughness: 0.3,
-      stroke: "#52525b",
-      strokeWidth: 1.0,
-      seed: s + 33,
-    });
-    const c2Foot = roughGen.line(c2SeatFrontX - 2, yBase, c2SeatBackX + 3, yBase, {
-      roughness: 0.25,
-      stroke: "#52525b",
-      strokeWidth: 1.1,
-      seed: s + 34,
-    });
-
-    // Armrest
-    const c2Arm = roughGen.line(cx + 20, 5.5, cx + 8, 5.5, {
-      roughness: 0.2,
-      stroke,
-      strokeWidth: detailStrokeWidth,
-      seed: s + 35,
-    });
-    const c2ArmPost = roughGen.line(cx + 8, 5.5, cx + 8, ySeat, {
-      roughness: 0.2,
-      stroke,
-      strokeWidth: detailStrokeWidth,
-      seed: s + 36,
-    });
-
-    // White lattice accent stripes across webbing
-    const c2Stripe1 = roughGen.line(cx + 21.5, 4.5, cx + 18.5, 4.5, {
-      roughness: 0.2,
-      stroke: "#ffffff",
-      strokeWidth: 1.2,
-      seed: s + 39,
-    });
-    const c2Stripe2 = roughGen.line(cx + 19, 7, cx + 16, 7, {
-      roughness: 0.2,
-      stroke: "#ffffff",
-      strokeWidth: 1.2,
-      seed: s + 40,
-    });
-    const c2Stripe3 = roughGen.line(cx + 13, ySeat - 1.5, cx + 13, ySeat + 1.5, {
-      roughness: 0.2,
-      stroke: "#ffffff",
-      strokeWidth: 1.2,
-      seed: s + 41,
-    });
-    const c2Stripe4 = roughGen.line(cx + 8, ySeat - 1.5, cx + 8, ySeat + 1.5, {
-      roughness: 0.2,
-      stroke: "#ffffff",
-      strokeWidth: 1.2,
-      seed: s + 42,
     });
 
     paths.push(
-      ...roughGen.toPaths(c1BackWeb),
-      ...roughGen.toPaths(c1SeatWeb),
-      ...roughGen.toPaths(c1Back),
-      ...roughGen.toPaths(c1Seat),
       ...roughGen.toPaths(c1Leg1),
       ...roughGen.toPaths(c1Leg2),
-      ...roughGen.toPaths(c1Foot),
-      ...roughGen.toPaths(c1Arm),
-      ...roughGen.toPaths(c1ArmPost),
-      ...roughGen.toPaths(c1Stripe1),
-      ...roughGen.toPaths(c1Stripe2),
-      ...roughGen.toPaths(c1Stripe3),
-      ...roughGen.toPaths(c1Stripe4),
-      ...roughGen.toPaths(c2BackWeb),
-      ...roughGen.toPaths(c2SeatWeb),
-      ...roughGen.toPaths(c2Back),
-      ...roughGen.toPaths(c2Seat),
+      ...roughGen.toPaths(c1Back),
+      ...roughGen.toPaths(c1Seat),
       ...roughGen.toPaths(c2Leg1),
       ...roughGen.toPaths(c2Leg2),
-      ...roughGen.toPaths(c2Foot),
-      ...roughGen.toPaths(c2Arm),
-      ...roughGen.toPaths(c2ArmPost),
-      ...roughGen.toPaths(c2Stripe1),
-      ...roughGen.toPaths(c2Stripe2),
-      ...roughGen.toPaths(c2Stripe3),
-      ...roughGen.toPaths(c2Stripe4),
+      ...roughGen.toPaths(c2Back),
+      ...roughGen.toPaths(c2Seat),
+      ...roughGen.toPaths(tableTop),
+      ...roughGen.toPaths(tableLegL),
+      ...roughGen.toPaths(tableLegR),
     );
-
     return paths;
   }
 
@@ -718,44 +568,85 @@ export function generateRoofPaths(
       ...roughGen.toPaths(tankRoof),
     );
   } else {
-    // Feature C: Roof Access Bulkhead / Stair Penthouse with Antenna
-    const bulkX = 14;
-    const bulkY = 0;
-    const bulkW = 18;
-    const bulkH = 6;
-    const bulk = roughGen.rectangle(bulkX, bulkY, bulkW, bulkH, {
-      roughness: 0.4,
+    // Feature C: Rooftop Industrial HVAC Air Handler & Ductwork
+    const hvacX = 14;
+    const hvacW = 24;
+    const hvacH = 8;
+    const hvacY = parapetTopY - hvacH + 1;
+
+    // 1. Main HVAC compressor / air handler cabinet
+    const cabinet = roughGen.rectangle(hvacX, hvacY, hvacW, hvacH, {
+      roughness: 0.35,
       stroke,
       strokeWidth: detailStrokeWidth,
-      fill: "#dfd7c9",
+      fill: "#a8a29e",
       fillStyle: "solid",
       seed: s + 12,
     });
-    const door = roughGen.rectangle(bulkX + 4, bulkY + 2, 5, 4, {
-      roughness: 0.3,
-      stroke: "#786957",
+
+    // 2. Vertical panel seam separating compressor and coil chambers
+    const panelSeam = roughGen.line(hvacX + 13, hvacY, hvacX + 13, hvacY + hvacH, {
+      roughness: 0.25,
+      stroke: "#57534e",
       strokeWidth: 0.8,
-      fill: "#8c7e6c",
-      fillStyle: "solid",
       seed: s + 13,
     });
-    const antennaStem = roughGen.line(bulkX + 13, bulkY, bulkX + 13, bulkY - 8, {
+
+    // 3. Horizontal air intake louver slats on left section
+    const louvers: PathInfo[] = [];
+    for (let i = 0; i < 3; i++) {
+      const ly = hvacY + 2.0 + i * 1.8;
+      const louver = roughGen.line(hvacX + 2.5, ly, hvacX + 11, ly, {
+        roughness: 0.2,
+        stroke: "#57534e",
+        strokeWidth: 0.8,
+        seed: s + 14 + i,
+      });
+      louvers.push(...roughGen.toPaths(louver));
+    }
+
+    // 4. Rooftop exhaust fan cowl on top of right section
+    const fanX = hvacX + 18.5;
+    const fanY = hvacY - 2.5;
+    const fanCowl = roughGen.rectangle(fanX - 3.5, fanY, 7, 2.5, {
       roughness: 0.3,
-      stroke: "#52525b",
-      strokeWidth: 1.1,
-      seed: s + 14,
+      stroke,
+      strokeWidth: 0.9,
+      fill: "#78716c",
+      fillStyle: "solid",
+      seed: s + 17,
     });
-    const antennaBar = roughGen.line(bulkX + 9, bulkY - 5, bulkX + 17, bulkY - 5, {
+    const fanRim = roughGen.line(fanX - 4.5, fanY, fanX + 4.5, fanY, {
+      roughness: 0.25,
+      stroke,
+      strokeWidth: 1.2,
+      seed: s + 18,
+    });
+
+    // 5. Industrial elbow duct pipe routing down into the roof deck
+    const pipeX = hvacX + hvacW + 4;
+    const pipeY = hvacY + 2;
+    const ductVertical = roughGen.line(pipeX, parapetTopY, pipeX, pipeY, {
       roughness: 0.3,
-      stroke: "#52525b",
-      strokeWidth: 0.8,
-      seed: s + 15,
+      stroke: "#57534e",
+      strokeWidth: 2.0,
+      seed: s + 19,
     });
+    const ductHorizontal = roughGen.line(pipeX, pipeY, hvacX + hvacW, pipeY, {
+      roughness: 0.3,
+      stroke: "#57534e",
+      strokeWidth: 2.0,
+      seed: s + 20,
+    });
+
     paths.push(
-      ...roughGen.toPaths(bulk),
-      ...roughGen.toPaths(door),
-      ...roughGen.toPaths(antennaStem),
-      ...roughGen.toPaths(antennaBar),
+      ...roughGen.toPaths(cabinet),
+      ...roughGen.toPaths(panelSeam),
+      ...louvers,
+      ...roughGen.toPaths(fanCowl),
+      ...roughGen.toPaths(fanRim),
+      ...roughGen.toPaths(ductVertical),
+      ...roughGen.toPaths(ductHorizontal),
     );
   }
 
